@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { ArrowRight, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,13 +11,29 @@ export const Route = createFileRoute("/_authenticated/onboarding")({
   component: Onboarding,
 });
 
-const ACCENTS = [
-  { v: "#10b981", n: "Verde" },
-  { v: "#3b82f6", n: "Azul" },
-  { v: "#a78bfa", n: "Lila" },
-  { v: "#f59e0b", n: "Ámbar" },
-  { v: "#ef4444", n: "Rojo" },
-  { v: "#f5f5f5", n: "Plata" },
+type VisualTheme = "dark" | "light";
+
+const LEGACY_PRIMARY_COLOR = "#10b981";
+const THEME_STORAGE_KEY = "kutt-theme-mode";
+
+const VISUAL_THEMES: Array<{
+  value: VisualTheme;
+  label: string;
+  hint: string;
+  previewClassName: string;
+}> = [
+  {
+    value: "dark",
+    label: "Oscuro premium",
+    hint: "Grafito, contraste alto y foco operativo.",
+    previewClassName: "bg-[#171719] text-white border-white/10",
+  },
+  {
+    value: "light",
+    label: "Claro minimalista",
+    hint: "Base limpia, luminosa y simple.",
+    previewClassName: "bg-[#f8f8f7] text-[#202024] border-black/10",
+  },
 ];
 
 const DEFAULT_SERVICES = [
@@ -32,11 +48,25 @@ function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
-  const [color, setColor] = useState(ACCENTS[0].v);
+  const [visualTheme, setVisualTheme] = useState<VisualTheme>("dark");
   const [barber, setBarber] = useState("");
   const [open, setOpen] = useState(10);
   const [close, setClose] = useState(21);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === "dark" || saved === "light") {
+      setVisualTheme(saved);
+      document.documentElement.dataset.theme = saved;
+    }
+  }, []);
+
+  const selectVisualTheme = (theme: VisualTheme) => {
+    setVisualTheme(theme);
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  };
 
   const next = () => setStep((s) => s + 1);
   const back = () => setStep((s) => Math.max(0, s - 1));
@@ -51,7 +81,7 @@ function Onboarding() {
         .insert({
           owner_id: user.id,
           name: name.trim(),
-          primary_color: color,
+          primary_color: LEGACY_PRIMARY_COLOR,
           open_hour: open,
           close_hour: close,
           onboarded: true,
@@ -62,7 +92,7 @@ function Onboarding() {
 
       // First barber + default services
       await Promise.all([
-        supabase.from("staff").insert({ business_id: biz.id, name: barber.trim() || "Barbero 1", color }),
+        supabase.from("staff").insert({ business_id: biz.id, name: barber.trim() || "Barbero 1", color: LEGACY_PRIMARY_COLOR }),
         supabase.from("services").insert(
           DEFAULT_SERVICES.map((s) => ({ ...s, business_id: biz.id }))
         ),
@@ -122,22 +152,31 @@ function Onboarding() {
           )}
 
           {step === 1 && (
-            <Step title="Color de tu marca" hint="Da identidad a tu sistema.">
-              <div className="grid grid-cols-3 gap-3">
-                {ACCENTS.map((a) => (
+            <Step title="Elige el tono visual de tu sistema" hint="Puedes ajustarlo más adelante.">
+              <div className="grid grid-cols-1 gap-3">
+                {VISUAL_THEMES.map((theme) => (
                   <button
-                    key={a.v}
+                    key={theme.value}
                     type="button"
-                    onClick={() => setColor(a.v)}
-                    className={`relative h-24 rounded-2xl active:scale-95 transition-transform hairline overflow-hidden`}
-                    style={{ background: a.v }}
+                    onClick={() => selectVisualTheme(theme.value)}
+                    className={`relative min-h-28 rounded-2xl border p-4 text-left active:scale-[0.99] transition-transform overflow-hidden ${theme.previewClassName}`}
                   >
-                    {color === a.v && (
-                      <span className="absolute inset-0 grid place-items-center bg-black/20">
-                        <Check className="w-6 h-6 text-white" strokeWidth={3} />
+                    <span className="flex items-center justify-between gap-4">
+                      <span>
+                        <span className="block text-base font-semibold">{theme.label}</span>
+                        <span className="mt-1 block text-xs opacity-70">{theme.hint}</span>
                       </span>
-                    )}
-                    <span className="absolute bottom-1.5 left-2 text-[10px] font-medium text-white/90 mix-blend-difference">{a.n}</span>
+                      {visualTheme === theme.value && (
+                        <span className="h-8 w-8 rounded-full bg-current/10 grid place-items-center shrink-0">
+                          <Check className="w-4 h-4" strokeWidth={3} />
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-5 grid grid-cols-3 gap-2">
+                      <span className="h-2 rounded-full bg-current/80" />
+                      <span className="h-2 rounded-full bg-current/35" />
+                      <span className="h-2 rounded-full bg-current/20" />
+                    </span>
                   </button>
                 ))}
               </div>

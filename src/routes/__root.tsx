@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import {
   Outlet,
   createRootRouteWithContext,
@@ -11,6 +12,9 @@ import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth-context";
 import { BusinessProvider } from "@/lib/business-context";
 import { Toaster } from "@/components/ui/sonner";
+
+const THEME_STORAGE_KEY = "kutt-theme-mode";
+type VisualTheme = "dark" | "light";
 
 function NotFoundComponent() {
   return (
@@ -84,12 +88,21 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [visualTheme, setVisualTheme] = useState<VisualTheme>("dark");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const theme = saved === "light" ? "light" : "dark";
+    document.documentElement.dataset.theme = theme;
+    setVisualTheme(theme);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BusinessProvider>
           <Outlet />
-          <Toaster position="top-center" theme="dark" richColors closeButton={false} />
+          <Toaster position="top-center" theme={visualTheme} richColors closeButton={false} />
         </BusinessProvider>
       </AuthProvider>
     </QueryClientProvider>

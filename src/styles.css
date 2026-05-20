@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Sistema operativo barbería — dark premium grafito.
- * Inspiración: Apple Dark Mode, Stripe, Linear, Arc, fintech premium.
+ * KUTT visual system.
+ * Dark premium is the default; light minimal is an optional local preference.
  */
 
 @theme inline {
@@ -101,6 +101,43 @@
 .dark {
   --background: oklch(0.16 0.005 270);
   --foreground: oklch(0.97 0.005 270);
+}
+
+:root[data-theme="light"] {
+  --background: oklch(0.98 0.004 270);
+  --foreground: oklch(0.18 0.006 270);
+  --surface: oklch(0.95 0.004 270);
+  --surface-elevated: oklch(1 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.006 270);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.006 270);
+
+  --primary: oklch(0.18 0.006 270);
+  --primary-foreground: oklch(0.98 0.004 270);
+
+  --secondary: oklch(0.91 0.006 270);
+  --secondary-foreground: oklch(0.18 0.006 270);
+
+  --muted: oklch(0.92 0.006 270);
+  --muted-foreground: oklch(0.48 0.012 270);
+
+  --accent: oklch(0.90 0.007 270);
+  --accent-foreground: oklch(0.18 0.006 270);
+
+  --success: oklch(0.62 0.16 155);
+  --success-foreground: oklch(0.98 0.004 155);
+  --info: oklch(0.57 0.14 235);
+  --info-foreground: oklch(0.98 0.004 235);
+  --warning: oklch(0.72 0.14 85);
+  --warning-foreground: oklch(0.20 0.02 85);
+  --destructive: oklch(0.58 0.18 22);
+  --destructive-foreground: oklch(0.98 0.004 270);
+
+  --border: oklch(0 0 0 / 8%);
+  --border-strong: oklch(0 0 0 / 14%);
+  --input: oklch(0 0 0 / 5%);
+  --ring: oklch(0.62 0.16 155 / 45%);
 }
 
 @layer base {
