@@ -1,0 +1,154 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Sistema operativo barbería — dark premium grafito.
+ * Inspiración: Apple Dark Mode, Stripe, Linear, Arc, fintech premium.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+}
+
+:root {
+  --radius: 0.875rem;
+
+  /* Base — grafito profundo */
+  --background: oklch(0.16 0.005 270);
+  --foreground: oklch(0.97 0.005 270);
+  --surface: oklch(0.19 0.006 270);
+  --surface-elevated: oklch(0.22 0.007 270);
+  --card: oklch(0.20 0.006 270);
+  --card-foreground: oklch(0.97 0.005 270);
+  --popover: oklch(0.21 0.007 270);
+  --popover-foreground: oklch(0.97 0.005 270);
+
+  /* Acentos premium */
+  --primary: oklch(0.97 0.005 270);
+  --primary-foreground: oklch(0.16 0.005 270);
+
+  --secondary: oklch(0.26 0.008 270);
+  --secondary-foreground: oklch(0.97 0.005 270);
+
+  --muted: oklch(0.24 0.007 270);
+  --muted-foreground: oklch(0.65 0.012 270);
+
+  --accent: oklch(0.28 0.008 270);
+  --accent-foreground: oklch(0.97 0.005 270);
+
+  /* Verde elegante para pagos / éxito */
+  --success: oklch(0.72 0.16 155);
+  --success-foreground: oklch(0.14 0.02 155);
+
+  /* Azul frío premium */
+  --info: oklch(0.70 0.13 235);
+  --info-foreground: oklch(0.14 0.02 235);
+
+  /* Amarillo suave pendientes */
+  --warning: oklch(0.82 0.12 85);
+  --warning-foreground: oklch(0.18 0.02 85);
+
+  /* Rojo suave alertas */
+  --destructive: oklch(0.65 0.18 22);
+  --destructive-foreground: oklch(0.97 0.005 270);
+
+  --border: oklch(1 0 0 / 8%);
+  --border-strong: oklch(1 0 0 / 14%);
+  --input: oklch(1 0 0 / 6%);
+  --ring: oklch(0.72 0.16 155 / 50%);
+}
+
+.dark {
+  --background: oklch(0.16 0.005 270);
+  --foreground: oklch(0.97 0.005 270);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html, body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+
+  body {
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button, a {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  input, textarea {
+    font-size: 16px; /* prevent iOS zoom */
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: color-mix(in oklab, var(--surface-elevated) 78%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  .hairline {
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .hairline-strong {
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+  }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
+  .safe-top { padding-top: max(env(safe-area-inset-top), 0.5rem); }
+}
+
+/* Inter font */
+@import url("https://rsms.me/inter/inter.css");
