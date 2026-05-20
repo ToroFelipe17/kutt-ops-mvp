@@ -21,7 +21,7 @@ function SplashLoader() {
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-4">
         <div className="h-9 w-9 rounded-full border-2 border-muted border-t-foreground animate-spin" />
-        <p className="text-xs text-muted-foreground tracking-widest uppercase">Sillón</p>
+        <p className="text-xs text-muted-foreground tracking-widest uppercase">KUTT</p>
       </div>
     </div>
   );

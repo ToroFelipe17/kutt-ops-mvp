@@ -68,14 +68,14 @@ function AuthPage() {
           className="mb-10"
         >
           <div className="flex items-center gap-2 mb-8">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-success to-info grid place-items-center text-background font-bold text-sm">S</div>
-            <span className="text-base font-semibold tracking-tight">Sillón</span>
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-success to-info grid place-items-center text-background font-bold text-sm">K</div>
+            <span className="text-base font-semibold tracking-tight">KUTT</span>
           </div>
           <h1 className="text-[28px] leading-tight font-semibold tracking-tight">
             {mode === "signup" ? "Crea tu cuenta" : "Bienvenido de vuelta"}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            {mode === "signup" ? "Tu barbería, en tu bolsillo." : "Ingresa para continuar."}
+            {mode === "signup" ? "Opera tu barbería con claridad." : "Ingresa para continuar."}
           </p>
         </motion.div>
 
