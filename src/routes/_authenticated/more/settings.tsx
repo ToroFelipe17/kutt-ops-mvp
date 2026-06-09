@@ -1,16 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, ChevronLeft, ChevronUp } from "lucide-react";
+import { Check, ChevronLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import {
-  createDefaultBusinessHours,
+  createScheduleFromSimple,
   formatHour,
-  hasStoredBusinessHoursSchedule,
+  getActiveWeeklySchedule,
+  getSimpleScheduleRangeLabel,
   loadBusinessHoursSchedule,
   saveBusinessHoursSchedule,
+  SIMPLE_SCHEDULE_RANGES,
   type BusinessDayHours,
   type BusinessHoursSchedule,
+  type BusinessHoursMode,
+  type SimpleScheduleRange,
   type WeekdayId,
 } from "@/lib/business-hours";
 import { getStoredVisualTheme, setStoredVisualTheme, VISUAL_THEMES, type VisualTheme } from "@/lib/visual-theme";
@@ -23,11 +27,8 @@ export const Route = createFileRoute("/_authenticated/more/settings")({
 function SettingsPage() {
   const { business, refresh } = useBusiness();
   const [visualTheme, setVisualTheme] = useState<VisualTheme>(() => getStoredVisualTheme());
-  const [baseOpen, setBaseOpen] = useState(10);
-  const [baseClose, setBaseClose] = useState(20);
-  const [schedule, setSchedule] = useState<BusinessHoursSchedule>(() => createDefaultBusinessHours());
-  const [customDaysOpen, setCustomDaysOpen] = useState(false);
-  const [savingBase, setSavingBase] = useState(false);
+  const [schedule, setSchedule] = useState<BusinessHoursSchedule>(() => createScheduleFromSimple());
+  const [savingHours, setSavingHours] = useState(false);
 
   useEffect(() => {
     setVisualTheme(getStoredVisualTheme());
@@ -35,10 +36,7 @@ function SettingsPage() {
 
   useEffect(() => {
     if (!business) return;
-    setBaseOpen(business.open_hour);
-    setBaseClose(business.close_hour);
     setSchedule(loadBusinessHoursSchedule(business.id, business.open_hour, business.close_hour));
-    setCustomDaysOpen(hasStoredBusinessHoursSchedule(business.id));
   }, [business]);
 
   const selectVisualTheme = (theme: VisualTheme) => {
@@ -47,37 +45,58 @@ function SettingsPage() {
     toast.success("Preferencia visual actualizada");
   };
 
-  const saveBaseSchedule = async () => {
-    if (!business || savingBase) return;
-    if (baseOpen >= baseClose) {
+  const saveHours = async () => {
+    if (!business || savingHours) return;
+    if (schedule.openHour >= schedule.closeHour) {
       toast.error("La hora de cierre debe ser posterior a la apertura");
       return;
     }
 
-    setSavingBase(true);
+    setSavingHours(true);
     const { error } = await supabase
       .from("businesses")
-      .update({ open_hour: baseOpen, close_hour: baseClose })
+      .update({ open_hour: schedule.openHour, close_hour: schedule.closeHour })
       .eq("id", business.id);
-    setSavingBase(false);
+    setSavingHours(false);
 
     if (error) {
       toast.error(error.message);
       return;
     }
 
-    if (!customDaysOpen) {
-      setSchedule(createDefaultBusinessHours(baseOpen, baseClose));
+    const next = schedule.mode === "simple"
+      ? createScheduleFromSimple(schedule.simpleRange, schedule.openHour, schedule.closeHour)
+      : schedule;
+    setSchedule(next);
+    saveBusinessHoursSchedule(business.id, next);
+    await refresh();
+    toast.success("Horario actualizado");
+  };
+
+  const setHoursMode = (mode: BusinessHoursMode) => {
+    if (mode === schedule.mode) return;
+    if (mode === "custom") {
+      setSchedule({ ...schedule, mode: "custom", days: getActiveWeeklySchedule(schedule) });
+      return;
     }
 
-    await refresh();
-    toast.success("Horario base actualizado");
+    setSchedule(createScheduleFromSimple(schedule.simpleRange, schedule.openHour, schedule.closeHour));
+  };
+
+  const updateSimpleRange = (simpleRange: SimpleScheduleRange) => {
+    setSchedule(createScheduleFromSimple(simpleRange, schedule.openHour, schedule.closeHour));
+  };
+
+  const updateSimpleHour = (patch: Partial<Pick<BusinessHoursSchedule, "openHour" | "closeHour">>) => {
+    const openHour = patch.openHour ?? schedule.openHour;
+    const closeHour = patch.closeHour ?? schedule.closeHour;
+    setSchedule(createScheduleFromSimple(schedule.simpleRange, openHour, closeHour));
   };
 
   const updateDay = (dayId: WeekdayId, patch: Partial<BusinessDayHours>) => {
-    if (!business) return;
     const next = {
       ...schedule,
+      mode: "custom" as const,
       days: schedule.days.map((day) => {
         if (day.day !== dayId) return day;
         const updated = { ...day, ...patch };
@@ -88,16 +107,6 @@ function SettingsPage() {
       }),
     };
     setSchedule(next);
-    saveBusinessHoursSchedule(business.id, next);
-  };
-
-  const toggleCustomDays = () => {
-    if (!business) return;
-    const nextOpen = !customDaysOpen;
-    setCustomDaysOpen(nextOpen);
-    if (nextOpen) {
-      saveBusinessHoursSchedule(business.id, schedule);
-    }
   };
 
   return (
@@ -145,49 +154,86 @@ function SettingsPage() {
         <div className="rounded-2xl bg-surface hairline p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs text-muted-foreground">Horario base</p>
+              <p className="text-xs text-muted-foreground">Horario</p>
               <h2 className="mt-1 text-base font-semibold">
-                Lunes a viernes: {formatHour(baseOpen)} - {formatHour(baseClose)}
+                {schedule.mode === "simple" ? "Horario simple" : "Personalizar días"}
               </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {schedule.mode === "simple"
+                  ? `${getSimpleScheduleRangeLabel(schedule.simpleRange)} · ${formatHour(schedule.openHour)} - ${formatHour(schedule.closeHour)}`
+                  : "Edita cada día de forma independiente"}
+              </p>
             </div>
             <button
               type="button"
-              onClick={saveBaseSchedule}
-              disabled={!business || savingBase}
+              onClick={saveHours}
+              disabled={!business || savingHours}
               className="h-9 px-3 rounded-full bg-foreground text-background text-xs font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
             >
-              {savingBase ? "Guardando" : "Guardar"}
+              {savingHours ? "Guardando" : "Guardar"}
             </button>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <HourStepper
-              label="Abre"
-              value={baseOpen}
-              min={6}
-              max={baseClose - 1}
-              onChange={setBaseOpen}
-            />
-            <HourStepper
-              label="Cierra"
-              value={baseClose}
-              min={baseOpen + 1}
-              max={23}
-              onChange={setBaseClose}
-            />
+          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-background/40 hairline p-1">
+            {(["simple", "custom"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setHoursMode(mode)}
+                className={`h-10 rounded-xl text-sm font-medium transition-colors ${
+                  schedule.mode === mode
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {mode === "simple" ? "Horario simple" : "Personalizar días"}
+              </button>
+            ))}
           </div>
 
-          <button
-            type="button"
-            onClick={toggleCustomDays}
-            disabled={!business}
-            className="mt-4 w-full h-11 rounded-xl bg-background/40 hairline px-3 flex items-center justify-between text-sm font-medium active:scale-[0.99] transition-transform disabled:opacity-50"
-          >
-            <span>Personalizar días</span>
-            {customDaysOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
+          {schedule.mode === "simple" ? (
+            <div className="mt-4 space-y-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Aplicar horario a</p>
+                <div className="mt-2 grid gap-2">
+                  {SIMPLE_SCHEDULE_RANGES.map((range) => (
+                    <button
+                      key={range.value}
+                      type="button"
+                      onClick={() => updateSimpleRange(range.value)}
+                      className={`h-11 rounded-xl px-3 flex items-center justify-between text-sm font-medium hairline transition-colors ${
+                        schedule.simpleRange === range.value
+                          ? "bg-foreground/5 hairline-strong"
+                          : "bg-background/40 text-muted-foreground"
+                      }`}
+                    >
+                      <span>{range.label}</span>
+                      {schedule.simpleRange === range.value && <Check className="w-4 h-4 text-success" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {customDaysOpen && (
+              <div className="grid grid-cols-2 gap-3">
+                <HourStepper
+                  label="Apertura"
+                  value={schedule.openHour}
+                  min={6}
+                  max={schedule.closeHour - 1}
+                  onChange={(value) => updateSimpleHour({ openHour: value })}
+                />
+                <HourStepper
+                  label="Cierre"
+                  value={schedule.closeHour}
+                  min={schedule.openHour + 1}
+                  max={23}
+                  onChange={(value) => updateSimpleHour({ closeHour: value })}
+                />
+              </div>
+
+              <WeeklyPreview days={getActiveWeeklySchedule(schedule)} />
+            </div>
+          ) : (
             <div className="mt-3 space-y-2">
               {schedule.days.map((day) => (
                 <DayHoursRow key={day.day} day={day} onChange={updateDay} />
@@ -229,21 +275,21 @@ function DayHoursRow({
               : "bg-muted text-muted-foreground"
           }`}
         >
-          {day.isOpen ? "Activo" : "Cerrado"}
+          {day.isOpen ? "Abierto" : "Cerrado"}
         </button>
       </div>
 
       {day.isOpen && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <HourStepper
-            label="Abre"
+            label="Apertura"
             value={day.openHour}
             min={6}
             max={day.closeHour - 1}
             onChange={(value) => onChange(day.day, { openHour: value })}
           />
           <HourStepper
-            label="Cierra"
+            label="Cierre"
             value={day.closeHour}
             min={day.openHour + 1}
             max={23}
@@ -251,6 +297,24 @@ function DayHoursRow({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function WeeklyPreview({ days }: { days: BusinessDayHours[] }) {
+  return (
+    <div className="rounded-2xl bg-background/40 hairline p-3">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Vista semanal</p>
+      <div className="mt-2 space-y-1">
+        {days.map((day) => (
+          <div key={day.day} className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">{day.label}</span>
+            <span className="font-medium tabular">
+              {day.isOpen ? `${formatHour(day.openHour)} - ${formatHour(day.closeHour)}` : "Cerrado"}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
