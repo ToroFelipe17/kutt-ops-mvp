@@ -5,36 +5,14 @@ import { ArrowRight, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { useBusiness } from "@/lib/business-context";
+import { getStoredVisualTheme, setStoredVisualTheme, VISUAL_THEMES, type VisualTheme } from "@/lib/visual-theme";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   component: Onboarding,
 });
 
-type VisualTheme = "dark" | "light";
-
 const LEGACY_PRIMARY_COLOR = "#10b981";
-const THEME_STORAGE_KEY = "kutt-theme-mode";
-
-const VISUAL_THEMES: Array<{
-  value: VisualTheme;
-  label: string;
-  hint: string;
-  previewClassName: string;
-}> = [
-  {
-    value: "dark",
-    label: "Oscuro premium",
-    hint: "Grafito, contraste alto y foco operativo.",
-    previewClassName: "bg-[#171719] text-white border-white/10",
-  },
-  {
-    value: "light",
-    label: "Claro minimalista",
-    hint: "Base limpia, luminosa y simple.",
-    previewClassName: "bg-[#f8f8f7] text-[#202024] border-black/10",
-  },
-];
 
 const DEFAULT_SERVICES = [
   { name: "Corte clásico", duration_min: 30, price: 12000 },
@@ -48,24 +26,19 @@ function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
-  const [visualTheme, setVisualTheme] = useState<VisualTheme>("dark");
+  const [visualTheme, setVisualTheme] = useState<VisualTheme>(() => getStoredVisualTheme());
   const [barber, setBarber] = useState("");
   const [open, setOpen] = useState(10);
   const [close, setClose] = useState(21);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === "dark" || saved === "light") {
-      setVisualTheme(saved);
-      document.documentElement.dataset.theme = saved;
-    }
+    setVisualTheme(getStoredVisualTheme());
   }, []);
 
   const selectVisualTheme = (theme: VisualTheme) => {
     setVisualTheme(theme);
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    setStoredVisualTheme(theme);
   };
 
   const next = () => setStep((s) => s + 1);

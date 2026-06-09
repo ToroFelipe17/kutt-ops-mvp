@@ -12,9 +12,14 @@ import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth-context";
 import { BusinessProvider } from "@/lib/business-context";
 import { Toaster } from "@/components/ui/sonner";
-
-const THEME_STORAGE_KEY = "kutt-theme-mode";
-type VisualTheme = "dark" | "light";
+import {
+  applyVisualTheme,
+  getStoredVisualTheme,
+  normalizeVisualTheme,
+  THEME_CHANGE_EVENT,
+  THEME_STORAGE_KEY,
+  type VisualTheme,
+} from "@/lib/visual-theme";
 
 function NotFoundComponent() {
   return (
@@ -88,13 +93,34 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  const [visualTheme, setVisualTheme] = useState<VisualTheme>("dark");
+  const [visualTheme, setVisualTheme] = useState<VisualTheme>(() => getStoredVisualTheme());
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-    const theme = saved === "light" ? "light" : "dark";
-    document.documentElement.dataset.theme = theme;
+    const theme = getStoredVisualTheme();
+    applyVisualTheme(theme);
     setVisualTheme(theme);
+
+    const syncTheme = () => {
+      const nextTheme = getStoredVisualTheme();
+      applyVisualTheme(nextTheme);
+      setVisualTheme(nextTheme);
+    };
+
+    const handleThemeChange = (event: Event) => {
+      const nextTheme = normalizeVisualTheme((event as CustomEvent<VisualTheme>).detail);
+      setVisualTheme(nextTheme);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === THEME_STORAGE_KEY) syncTheme();
+    };
+
+    window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, []);
 
   return (
