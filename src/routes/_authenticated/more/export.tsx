@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { clp } from "@/lib/format";
-import { monthRange, methodLabel, type PaymentRow } from "@/lib/finance";
+import { getPaymentDisplayNotes, getPaymentTipAmount, monthRange, methodLabel, type PaymentRow } from "@/lib/finance";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/export")({
@@ -46,27 +46,31 @@ function ExportPage() {
   const staffMap = Object.fromEntries(staff.map((s) => [s.id, s.name]));
 
   const sales = payments.reduce((s, p) => s + p.amount, 0);
+  const tips = payments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
+  const received = sales + tips;
   const cash = payments.filter((p) => p.method === "efectivo").reduce((s, p) => s + p.amount, 0);
   const transfer = payments.filter((p) => p.method === "transferencia").reduce((s, p) => s + p.amount, 0);
   const card = payments.filter((p) => p.method === "debito" || p.method === "credito").reduce((s, p) => s + p.amount, 0);
   const commissions = payments.reduce((s, p) => s + (p.commission_amount ?? 0), 0);
-  const iva = Math.round(sales / 1.19 * 0.19);
 
   const downloadCSV = () => {
     const rows = [
-      ["fecha", "hora", "metodo", "estado", "monto_clp", "barbero", "comision_pct", "comision_clp", "notas"],
+      ["fecha", "hora", "metodo", "estado", "venta_clp", "propina_clp", "total_recibido_clp", "barbero", "comision_pct", "comision_clp", "notas"],
       ...payments.map((p) => {
         const d = new Date(p.created_at);
+        const tip = getPaymentTipAmount(p);
         return [
           d.toISOString().slice(0, 10),
           d.toTimeString().slice(0, 5),
           methodLabel(p.method),
           p.status,
           String(p.amount),
+          String(tip),
+          String(p.amount + tip),
           p.staff_id ? staffMap[p.staff_id] ?? "" : "",
           p.commission_pct != null ? String(p.commission_pct) : "",
           p.commission_amount != null ? String(p.commission_amount) : "",
-          (p.notes ?? "").replace(/[\n,;]/g, " "),
+          getPaymentDisplayNotes(p.notes).replace(/[\n,;]/g, " "),
         ];
       }),
     ];
@@ -102,7 +106,8 @@ function ExportPage() {
 <p style="color:#666;margin:0">Resumen contable — ${monthLabel}</p>
 <div class="totals">
   <div class="card"><div class="l">Total ventas</div><div class="v">${clp(sales)}</div></div>
-  <div class="card"><div class="l">IVA estimado (19%)</div><div class="v">${clp(iva)}</div></div>
+  <div class="card"><div class="l">Propinas</div><div class="v">${clp(tips)}</div></div>
+  <div class="card"><div class="l">Total recibido</div><div class="v">${clp(received)}</div></div>
   <div class="card"><div class="l">Comisiones</div><div class="v">${clp(commissions)}</div></div>
   <div class="card"><div class="l">N° transacciones</div><div class="v">${payments.length}</div></div>
 </div>
@@ -115,10 +120,11 @@ function ExportPage() {
 </table>
 <h2>Detalle</h2>
 <table>
-  <tr><th>Fecha</th><th>Método</th><th>Barbero</th><th>Estado</th><th class="right">Monto</th></tr>
+  <tr><th>Fecha</th><th>Método</th><th>Barbero</th><th>Estado</th><th class="right">Venta</th><th class="right">Propina</th><th class="right">Recibido</th></tr>
   ${payments.map((p) => {
     const d = new Date(p.created_at);
-    return `<tr><td>${d.toLocaleDateString("es-CL")} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? staffMap[p.staff_id] ?? "" : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td></tr>`;
+    const tip = getPaymentTipAmount(p);
+    return `<tr><td>${d.toLocaleDateString("es-CL")} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? staffMap[p.staff_id] ?? "" : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(p.amount + tip)}</td></tr>`;
   }).join("")}
 </table>
 <script>window.onload=()=>setTimeout(()=>window.print(),300)</script>
@@ -157,7 +163,8 @@ function ExportPage() {
 
       <section className="px-5 mt-4 grid grid-cols-2 gap-2">
         <Card label="Ventas" value={clp(sales)} />
-        <Card label="IVA est." value={clp(iva)} />
+        <Card label="Propinas" value={clp(tips)} />
+        <Card label="Recibido" value={clp(received)} />
         <Card label="Comisiones" value={clp(commissions)} />
         <Card label="Transacciones" value={String(payments.length)} />
       </section>

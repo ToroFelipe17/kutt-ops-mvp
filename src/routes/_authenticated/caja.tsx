@@ -23,6 +23,7 @@ import {
   computeDayTotals,
   dayRange,
   methodLabel,
+  getPaymentTipAmount,
   type CashMovementRow,
   type PaymentRow,
   type PaymentStatus,
@@ -191,12 +192,10 @@ function CajaPage() {
           sub={`Ventas − comisiones − gastos`}
         />
         <KpiCard
-          label="Caja en mano"
-          value={clp(totals.cashOnHand)}
-          sub="Efectivo + ingresos − egresos"
+          label="Propinas"
+          value={clp(totals.tips)}
+          sub="Separadas de ventas"
         />
-        <KpiCard label="Comisiones" value={clp(totals.commissions)} sub={`${payments.filter((p) => p.commission_amount).length} pagos`} />
-        <KpiCard label="IVA estimado" value={clp(totals.ivaEstimated)} sub="19% sobre ventas" />
       </section>
 
       {/* Conciliación */}
@@ -337,6 +336,7 @@ function PaymentItem({
 }) {
   const Icon =
     p.method === "efectivo" ? Banknote : p.method === "transferencia" ? Send : CreditCard;
+  const tip = getPaymentTipAmount(p);
   return (
     <li className="rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3">
       <div className="h-9 w-9 rounded-full bg-muted grid place-items-center shrink-0">
@@ -358,6 +358,7 @@ function PaymentItem({
       </div>
       <div className="text-right">
         <p className="text-sm font-semibold tabular">{clp(p.amount)}</p>
+        {tip > 0 && <p className="text-[10px] text-success tabular">+ {clp(tip)} propina</p>}
         <button
           onClick={onToggle}
           className={`mt-0.5 text-[10px] font-medium px-2 py-0.5 rounded-full ${

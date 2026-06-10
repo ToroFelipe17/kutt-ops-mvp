@@ -1,14 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { MessageCircle, MoreHorizontal, Plus, Wallet } from "lucide-react";
+import { Banknote, CheckCircle2, CreditCard, MessageCircle, MoreHorizontal, Plus, Send, Wallet, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 import { useBusiness } from "@/lib/business-context";
 import { BottomNav } from "@/components/BottomNav";
 import { StatusBadge, type AppointmentStatus } from "@/components/StatusBadge";
 import { clp, endOfDay, shortTime, startOfDay, whatsappLink } from "@/lib/format";
+import { encodePaymentNotes, getPaymentTipAmount, methodLabel, type PaymentMethod } from "@/lib/finance";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/today")({
@@ -33,6 +34,7 @@ function Today() {
   
   const { business } = useBusiness();
   const qc = useQueryClient();
+  const [paymentTarget, setPaymentTarget] = useState<AppointmentRow | null>(null);
 
   const { data: appts = [], isLoading } = useQuery({
     queryKey: ["today", business?.id],
@@ -56,7 +58,7 @@ function Today() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payments")
-        .select("amount,method")
+        .select("amount,method,notes")
         .eq("business_id", business!.id)
         .gte("created_at", startOfDay().toISOString())
         .lte("created_at", endOfDay().toISOString());
@@ -82,11 +84,12 @@ function Today() {
 
   const totals = useMemo(() => {
     const revenue = payments.reduce((s, p) => s + (p.amount ?? 0), 0);
+    const tips = payments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
     const pending = appts
       .filter((a) => a.status !== "pagado" && a.status !== "completado" && a.status !== "cancelado")
       .reduce((s, a) => s + (a.price ?? 0), 0);
     const cash = payments.filter((p) => p.method === "efectivo").reduce((s, p) => s + (p.amount ?? 0), 0);
-    return { revenue, pending, cash, count: appts.length };
+    return { revenue, tips, pending, cash, count: appts.length };
   }, [appts, payments]);
 
   const updateStatus = useMutation({
@@ -99,25 +102,47 @@ function Today() {
   });
 
   const collect = useMutation({
-    mutationFn: async (a: AppointmentRow) => {
+    mutationFn: async ({
+      appointment,
+      method,
+      tipAmount,
+      notes,
+    }: {
+      appointment: AppointmentRow;
+      method: PaymentMethod;
+      tipAmount: number;
+      notes: string;
+    }) => {
+      const { data: existing, error: existingError } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("appointment_id", appointment.id)
+        .limit(1)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) throw new Error("Pago registrado");
+
+      const a = appointment;
       const pct = a.staff?.commission_pct ?? null;
       const commissionAmount = pct != null ? Math.round((a.price * Number(pct)) / 100) : null;
       const { error: e1 } = await supabase.from("payments").insert({
         business_id: business!.id,
         appointment_id: a.id,
-        method: "efectivo",
+        method,
         amount: a.price,
         status: "conciliado",
         staff_id: a.staff_id,
         commission_pct: pct,
         commission_amount: commissionAmount,
+        notes: encodePaymentNotes(notes, tipAmount),
       });
       if (e1) throw e1;
       const { error: e2 } = await supabase.from("appointments").update({ status: "pagado" }).eq("id", a.id);
       if (e2) throw e2;
     },
     onSuccess: () => {
-      toast.success("Cobrado en efectivo");
+      toast.success("Pago registrado");
+      setPaymentTarget(null);
       qc.invalidateQueries({ queryKey: ["today", business?.id] });
       qc.invalidateQueries({ queryKey: ["today-payments", business?.id] });
     },
@@ -210,12 +235,23 @@ function Today() {
                 key={a.id}
                 a={a}
                 onStatus={(s) => updateStatus.mutate({ id: a.id, status: s })}
-                onCollect={() => collect.mutate(a)}
+                onCollect={() => setPaymentTarget(a)}
               />
             ))}
           </ul>
         )}
       </section>
+
+      <AnimatePresence>
+        {paymentTarget && (
+          <PaymentSheet
+            appointment={paymentTarget}
+            saving={collect.isPending}
+            onClose={() => setPaymentTarget(null)}
+            onSubmit={(payload) => collect.mutate(payload)}
+          />
+        )}
+      </AnimatePresence>
 
       <BottomNav />
     </div>
@@ -300,6 +336,11 @@ function AppointmentRowCard({
               Cobrar
             </ActionButton>
           )}
+          {isPaid && (
+            <div className="h-11 rounded-xl bg-success/15 text-success font-medium text-sm flex items-center justify-center">
+              Pago registrado
+            </div>
+          )}
           {a.status === "pendiente" && (
             <ActionButton onClick={() => onStatus("confirmado")}>Confirmar</ActionButton>
           )}
@@ -328,6 +369,137 @@ function AppointmentRowCard({
       )}
     </li>
   );
+}
+
+function PaymentSheet({
+  appointment,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  appointment: AppointmentRow;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (payload: {
+    appointment: AppointmentRow;
+    method: PaymentMethod;
+    tipAmount: number;
+    notes: string;
+  }) => void;
+}) {
+  const [method, setMethod] = useState<PaymentMethod>("efectivo");
+  const [tip, setTip] = useState("");
+  const [notes, setNotes] = useState("");
+  const tipAmount = parseCurrencyInput(tip);
+  const total = appointment.price + tipAmount;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: 420 }}
+        animate={{ y: 0 }}
+        exit={{ y: 420 }}
+        transition={{ type: "spring", damping: 28, stiffness: 280 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md mx-auto bg-surface-elevated rounded-t-3xl p-5 pb-8 hairline"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Registrar pago</p>
+            <h2 className="text-lg font-semibold">{appointment.client_name_snapshot ?? "Cliente"}</h2>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full bg-muted grid place-items-center">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 rounded-2xl bg-background/50 hairline p-4 space-y-2">
+          <AmountRow label="Servicio" value={clp(appointment.price)} />
+          <AmountRow label="Propina" value={clp(tipAmount)} />
+          <div className="pt-2 border-t border-border flex items-center justify-between">
+            <span className="text-sm font-medium">Total recibido</span>
+            <span className="text-xl font-semibold tabular">{clp(total)}</span>
+          </div>
+        </div>
+
+        <label className="mt-4 block">
+          <span className="text-xs text-muted-foreground font-medium px-1">Propina</span>
+          <input
+            inputMode="numeric"
+            value={tip ? clp(tipAmount) : ""}
+            onChange={(e) => setTip(e.target.value.replace(/\D/g, ""))}
+            placeholder="$0"
+            className="mt-1 w-full h-12 px-4 rounded-xl bg-background hairline text-sm tabular outline-none focus:hairline-strong"
+          />
+        </label>
+
+        <div className="mt-4">
+          <p className="text-xs text-muted-foreground font-medium px-1">Método de pago</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {PAYMENT_METHODS.map((item) => {
+              const Icon = item.icon;
+              const active = method === item.value;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setMethod(item.value)}
+                  className={`h-11 rounded-xl hairline flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.98] transition-transform ${
+                    active ? "bg-foreground text-background" : "bg-background/50 text-foreground"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notas opcionales"
+          className="mt-4 w-full min-h-20 px-4 py-3 rounded-xl bg-background hairline text-sm outline-none resize-none focus:hairline-strong"
+        />
+
+        <button
+          disabled={saving}
+          onClick={() => onSubmit({ appointment, method, tipAmount, notes })}
+          className="mt-5 w-full h-14 rounded-2xl bg-foreground text-background font-semibold active:scale-[0.98] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          <CheckCircle2 className="w-4 h-4" />
+          {saving ? "Registrando..." : "Marcar como pagado"}
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function AmountRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium tabular">{value}</span>
+    </div>
+  );
+}
+
+const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string; icon: typeof Banknote }> = [
+  { value: "efectivo", label: methodLabel("efectivo"), icon: Banknote },
+  { value: "transferencia", label: methodLabel("transferencia"), icon: Send },
+  { value: "debito", label: methodLabel("debito"), icon: CreditCard },
+  { value: "credito", label: methodLabel("credito"), icon: CreditCard },
+];
+
+function parseCurrencyInput(value: string): number {
+  return parseInt(value.replace(/\D/g, ""), 10) || 0;
 }
 
 function ActionButton({
