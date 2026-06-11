@@ -22,9 +22,11 @@ import { clp, shortTime } from "@/lib/format";
 import {
   computeDayTotals,
   dayRange,
+  encodePaymentNotes,
   methodLabel,
   getPaymentTipAmount,
   type CashMovementRow,
+  type PaymentMethod,
   type PaymentRow,
   type PaymentStatus,
 } from "@/lib/finance";
@@ -33,6 +35,10 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authenticated/caja")({
   component: CajaPage,
 });
+
+interface ServiceRow { id: string; name: string; duration_min: number; price: number }
+interface StaffRow { id: string; name: string; color: string | null }
+interface ClientRow { id: string; name: string; phone: string | null }
 
 function CajaPage() {
   const { business } = useBusiness();
@@ -95,7 +101,35 @@ function CajaPage() {
         .from("staff")
         .select("id,name,color")
         .eq("business_id", business!.id);
-      return data ?? [];
+      return (data ?? []) as StaffRow[];
+    },
+  });
+
+  const { data: services = [] } = useQuery({
+    queryKey: ["caja-services", business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("services")
+        .select("id,name,duration_min,price")
+        .eq("business_id", business!.id)
+        .eq("active", true)
+        .order("name");
+      return (data ?? []) as ServiceRow[];
+    },
+  });
+
+  const { data: recentClients = [] } = useQuery({
+    queryKey: ["caja-clients", business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("clients")
+        .select("id,name,phone")
+        .eq("business_id", business!.id)
+        .order("last_visit_at", { ascending: false, nullsFirst: false })
+        .limit(20);
+      return (data ?? []) as ClientRow[];
     },
   });
 
@@ -276,8 +310,15 @@ function CajaPage() {
         {movOpen && (
           <NewMovementSheet
             businessId={business!.id}
+            services={services}
+            staff={staff}
+            recentClients={recentClients}
             onClose={() => setMovOpen(false)}
-            onDone={() => qc.invalidateQueries({ queryKey: ["caja-mov", business?.id, from] })}
+            onDone={() => {
+              qc.invalidateQueries({ queryKey: ["caja-mov", business?.id, from] });
+              qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, from] });
+              qc.invalidateQueries({ queryKey: ["caja-pending", business?.id, from] });
+            }}
           />
         )}
       </AnimatePresence>
@@ -398,20 +439,61 @@ function MovementItem({ m }: { m: CashMovementRow }) {
 
 function NewMovementSheet({
   businessId,
+  services,
+  staff,
+  recentClients,
   onClose,
   onDone,
 }: {
   businessId: string;
+  services: ServiceRow[];
+  staff: StaffRow[];
+  recentClients: ClientRow[];
   onClose: () => void;
   onDone: () => void;
 }) {
   const [kind, setKind] = useState<"ingreso" | "egreso">("egreso");
   const [amount, setAmount] = useState("");
   const [concept, setConcept] = useState("");
+  const [isService, setIsService] = useState(false);
+  const [serviceId, setServiceId] = useState("");
+  const [staffId, setStaffId] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [pickedClient, setPickedClient] = useState<ClientRow | null>(null);
+  const [method, setMethod] = useState<PaymentMethod>("efectivo");
+  const [tip, setTip] = useState("");
+  const [serviceTime, setServiceTime] = useState(() => currentMinute());
+  const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const selectedService = services.find((service) => service.id === serviceId) ?? null;
+  const serviceAmount = parseCurrencyInput(amount) || selectedService?.price || 0;
+  const tipAmount = parseCurrencyInput(tip);
+  const filteredClients = useMemo(() => {
+    if (!clientName.trim()) return recentClients.slice(0, 5);
+    const query = clientName.toLowerCase();
+    return recentClients.filter((client) => client.name.toLowerCase().includes(query)).slice(0, 5);
+  }, [clientName, recentClients]);
+
+  useEffect(() => {
+    if (!serviceId && services[0]) setServiceId(services[0].id);
+  }, [serviceId, services]);
+
+  useEffect(() => {
+    if (!staffId && staff[0]) setStaffId(staff[0].id);
+  }, [staff, staffId]);
+
+  useEffect(() => {
+    if (!amount && selectedService?.price) setAmount(String(selectedService.price));
+  }, [amount, selectedService?.price]);
 
   const submit = async () => {
     const n = parseInt(amount.replace(/\D/g, ""), 10);
+    if (isService) {
+      await submitServicePayment();
+      return;
+    }
+
     if (!n || !concept.trim()) {
       toast.error("Falta monto o concepto");
       return;
@@ -431,6 +513,102 @@ function NewMovementSheet({
     toast.success(kind === "egreso" ? "Egreso registrado" : "Ingreso registrado");
     onDone();
     onClose();
+  };
+
+  const submitServicePayment = async () => {
+    if (!serviceAmount) {
+      toast.error("Falta monto del servicio");
+      return;
+    }
+    if (!staffId) {
+      toast.error("Selecciona barbero");
+      return;
+    }
+    setSaving(true);
+    try {
+      let clientId = pickedClient?.id ?? null;
+      const cleanClientName = clientName.trim();
+
+      if (!clientId && cleanClientName.length >= 2) {
+        const { data: existing } = await supabase
+          .from("clients")
+          .select("id")
+          .eq("business_id", businessId)
+          .ilike("name", cleanClientName)
+          .limit(1)
+          .maybeSingle();
+
+        if (existing) {
+          clientId = existing.id;
+        } else {
+          const { data: created, error } = await supabase
+            .from("clients")
+            .insert({ business_id: businessId, name: cleanClientName })
+            .select("id")
+            .single();
+          if (error) throw error;
+          clientId = created.id;
+        }
+      }
+
+      const { data: appointment, error: appointmentError } = await supabase
+        .from("appointments")
+        .insert({
+          business_id: businessId,
+          client_id: clientId,
+          staff_id: staffId,
+          service_id: selectedService?.id ?? null,
+          client_name_snapshot: cleanClientName || "Cliente",
+          service_name_snapshot: selectedService?.name ?? "Servicio",
+          starts_at: serviceTime.toISOString(),
+          duration_min: 60,
+          price: serviceAmount,
+          status: "pagado",
+          notes: notes.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (appointmentError) throw appointmentError;
+
+      const selectedStaff = staff.find((item) => item.id === staffId);
+      const { data: staffWithCommission } = await supabase
+        .from("staff")
+        .select("commission_pct")
+        .eq("id", staffId)
+        .maybeSingle();
+      const pct = staffWithCommission?.commission_pct ?? null;
+      const commissionAmount = pct != null ? Math.round((serviceAmount * Number(pct)) / 100) : null;
+
+      const { data: existingPayment, error: existingPaymentError } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("appointment_id", appointment.id)
+        .limit(1)
+        .maybeSingle();
+      if (existingPaymentError) throw existingPaymentError;
+      if (existingPayment) throw new Error("Pago registrado");
+
+      const { error: paymentError } = await supabase.from("payments").insert({
+        business_id: businessId,
+        appointment_id: appointment.id,
+        method,
+        amount: serviceAmount,
+        status: "conciliado",
+        staff_id: staffId,
+        commission_pct: pct,
+        commission_amount: commissionAmount,
+        notes: encodePaymentNotes(notes.trim() || `Servicio rápido${selectedStaff ? ` · ${selectedStaff.name}` : ""}`, tipAmount),
+      });
+      if (paymentError) throw paymentError;
+
+      toast.success("Servicio cobrado");
+      onDone();
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Error");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -460,7 +638,7 @@ function NewMovementSheet({
           {(["egreso", "ingreso"] as const).map((k) => (
             <button
               key={k}
-              onClick={() => setKind(k)}
+              onClick={() => { setKind(k); if (k === "egreso") setIsService(false); }}
               className={`h-10 rounded-lg text-sm font-medium ${
                 kind === k ? "bg-foreground text-background" : "text-muted-foreground"
               }`}
@@ -470,21 +648,149 @@ function NewMovementSheet({
           ))}
         </div>
 
+        {kind === "ingreso" && (
+          <button
+            type="button"
+            onClick={() => setIsService((value) => !value)}
+            className={`mt-4 w-full h-11 rounded-xl hairline text-sm font-medium transition-colors ${
+              isService ? "bg-success/15 text-success" : "bg-background text-foreground"
+            }`}
+          >
+            ¿Este ingreso corresponde a un servicio/corte?
+          </button>
+        )}
+
         <input
           autoFocus
           inputMode="numeric"
           placeholder="$0"
-          value={amount ? clp(parseInt(amount.replace(/\D/g, ""), 10) || 0) : ""}
+          value={amount ? clp(parseCurrencyInput(amount)) : ""}
           onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
           className="mt-4 w-full bg-transparent text-3xl font-semibold tabular text-center outline-none border-0"
         />
 
-        <input
-          placeholder="Concepto (ej: arriendo, propina, productos…)"
-          value={concept}
-          onChange={(e) => setConcept(e.target.value)}
-          className="mt-4 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
-        />
+        {isService ? (
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className="text-xs text-muted-foreground px-1">Servicio</p>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                {services.map((service) => (
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => { setServiceId(service.id); setAmount(String(service.price)); }}
+                    className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
+                      service.id === serviceId ? "bg-foreground text-background" : "bg-background"
+                    }`}
+                  >
+                    {service.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs text-muted-foreground px-1">Cliente</p>
+              <input
+                value={clientName}
+                onChange={(e) => { setClientName(e.target.value); setPickedClient(null); }}
+                placeholder="Nombre rápido (opcional)"
+                className="mt-2 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+              />
+              {filteredClients.length > 0 && !pickedClient && (
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                  {filteredClients.map((client) => (
+                    <button
+                      key={client.id}
+                      type="button"
+                      onClick={() => { setPickedClient(client); setClientName(client.name); }}
+                      className="shrink-0 px-3 h-9 rounded-full bg-muted hairline text-xs active:scale-95 transition-transform"
+                    >
+                      {client.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-xs text-muted-foreground px-1">Barbero</p>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                {staff.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setStaffId(item.id)}
+                    className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
+                      item.id === staffId ? "bg-foreground text-background" : "bg-background"
+                    }`}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <DateTimeInput
+                label="Fecha"
+                value={dateInputValue(serviceTime)}
+                type="date"
+                onChange={(value) => setServiceTime((current) => applyDateInput(current, value))}
+              />
+              <DateTimeInput
+                label="Hora"
+                value={timeInputValue(serviceTime)}
+                type="time"
+                onChange={(value) => setServiceTime((current) => applyTimeInput(current, value))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {PAYMENT_METHODS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setMethod(item.value)}
+                    className={`h-10 rounded-xl hairline flex items-center justify-center gap-2 text-xs font-medium ${
+                      method === item.value ? "bg-foreground text-background" : "bg-background"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <input
+              inputMode="numeric"
+              placeholder="Propina $0"
+              value={tip ? clp(tipAmount) : ""}
+              onChange={(e) => setTip(e.target.value.replace(/\D/g, ""))}
+              className="w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+            />
+            <textarea
+              placeholder="Notas opcionales"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full min-h-20 px-4 py-3 rounded-xl bg-background hairline text-sm outline-none resize-none focus:border-border-strong"
+            />
+            <div className="rounded-xl bg-background/50 hairline p-3 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Total recibido</span>
+              <span className="text-base font-semibold tabular">{clp(serviceAmount + tipAmount)}</span>
+            </div>
+          </div>
+        ) : (
+          <input
+            placeholder="Concepto (ej: arriendo, productos…)"
+            value={concept}
+            onChange={(e) => setConcept(e.target.value)}
+            className="mt-4 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+          />
+        )}
 
         <button
           disabled={saving}
@@ -496,4 +802,73 @@ function NewMovementSheet({
       </motion.div>
     </motion.div>
   );
+}
+
+const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string; icon: typeof Banknote }> = [
+  { value: "efectivo", label: methodLabel("efectivo"), icon: Banknote },
+  { value: "transferencia", label: methodLabel("transferencia"), icon: Send },
+  { value: "debito", label: methodLabel("debito"), icon: CreditCard },
+  { value: "credito", label: methodLabel("credito"), icon: CreditCard },
+];
+
+function DateTimeInput({
+  label,
+  value,
+  type,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  type: "date" | "time";
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="rounded-xl bg-background hairline p-3">
+      <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full bg-transparent text-sm font-medium outline-none"
+      />
+    </label>
+  );
+}
+
+function parseCurrencyInput(value: string): number {
+  return parseInt(value.replace(/\D/g, ""), 10) || 0;
+}
+
+function currentMinute(): Date {
+  const now = new Date();
+  now.setSeconds(0, 0);
+  return now;
+}
+
+function dateInputValue(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function timeInputValue(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function applyDateInput(current: Date, value: string): Date {
+  if (!value) return current;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return current;
+  const next = new Date(current);
+  next.setFullYear(year, month - 1, day);
+  return next;
+}
+
+function applyTimeInput(current: Date, value: string): Date {
+  const [hour, minute] = value.split(":").map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return current;
+  const next = new Date(current);
+  next.setHours(hour, minute, 0, 0);
+  return next;
 }
