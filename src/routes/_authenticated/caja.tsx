@@ -100,7 +100,9 @@ function CajaPage() {
       const { data } = await supabase
         .from("staff")
         .select("id,name,color")
-        .eq("business_id", business!.id);
+        .eq("business_id", business!.id)
+        .eq("active", true)
+        .order("name");
       return (data ?? []) as StaffRow[];
     },
   });
@@ -467,8 +469,10 @@ function NewMovementSheet({
   const [saving, setSaving] = useState(false);
 
   const selectedService = services.find((service) => service.id === serviceId) ?? null;
-  const serviceAmount = parseCurrencyInput(amount) || selectedService?.price || 0;
+  const serviceAmount = parseCurrencyInput(amount);
   const tipAmount = parseCurrencyInput(tip);
+  const hasValidAmount = serviceAmount > 0;
+  const submitDisabled = saving || !hasValidAmount || (!isService && !concept.trim());
   const filteredClients = useMemo(() => {
     if (!clientName.trim()) return recentClients.slice(0, 5);
     const query = clientName.toLowerCase();
@@ -483,12 +487,8 @@ function NewMovementSheet({
     if (!staffId && staff[0]) setStaffId(staff[0].id);
   }, [staff, staffId]);
 
-  useEffect(() => {
-    if (!amount && selectedService?.price) setAmount(String(selectedService.price));
-  }, [amount, selectedService?.price]);
-
   const submit = async () => {
-    const n = parseInt(amount.replace(/\D/g, ""), 10);
+    const n = parseCurrencyInput(amount);
     if (isService) {
       await submitServicePayment();
       return;
@@ -625,180 +625,222 @@ function NewMovementSheet({
         exit={{ y: 400 }}
         transition={{ type: "spring", damping: 28, stiffness: 280 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md mx-auto bg-surface-elevated rounded-t-3xl p-5 pb-8 hairline"
+        className="w-full max-w-md mx-auto bg-surface-elevated rounded-t-3xl hairline max-h-[92vh] overflow-hidden flex flex-col"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Movimiento de caja</h2>
-          <button onClick={onClose} className="h-8 w-8 rounded-full bg-muted grid place-items-center">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <div className="p-5 pb-4 overflow-y-auto overscroll-contain">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Movimiento de caja</h2>
+            <button onClick={onClose} className="h-8 w-8 rounded-full bg-muted grid place-items-center">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-        <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-background hairline">
-          {(["egreso", "ingreso"] as const).map((k) => (
+          <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-background hairline">
+            {(["egreso", "ingreso"] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => { setKind(k); if (k === "egreso") setIsService(false); }}
+                className={`h-10 rounded-lg text-sm font-medium ${
+                  kind === k ? "bg-foreground text-background" : "text-muted-foreground"
+                }`}
+              >
+                {k === "egreso" ? "Egreso" : "Ingreso"}
+              </button>
+            ))}
+          </div>
+
+          {kind === "ingreso" && (
             <button
-              key={k}
-              onClick={() => { setKind(k); if (k === "egreso") setIsService(false); }}
-              className={`h-10 rounded-lg text-sm font-medium ${
-                kind === k ? "bg-foreground text-background" : "text-muted-foreground"
+              type="button"
+              onClick={() => setIsService((value) => !value)}
+              className={`mt-4 w-full h-11 rounded-xl hairline text-sm font-medium transition-colors ${
+                isService ? "bg-success/15 text-success" : "bg-background text-foreground"
               }`}
             >
-              {k === "egreso" ? "Egreso" : "Ingreso"}
+              ¿Este ingreso corresponde a un servicio/corte?
             </button>
-          ))}
+          )}
+
+          <div className="mt-4 rounded-2xl bg-background/50 hairline p-4 text-center">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              {isService ? "Monto del servicio" : "Monto"}
+            </p>
+            <input
+              autoFocus
+              inputMode="numeric"
+              placeholder="$0"
+              value={amount ? clp(parseCurrencyInput(amount)) : ""}
+              onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
+              className="mt-1 w-full bg-transparent text-3xl font-semibold tabular text-center outline-none border-0"
+            />
+            {isService && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Este valor se guarda como venta del servicio. La propina se suma aparte.
+              </p>
+            )}
+          </div>
+
+          {isService ? (
+            hasValidAmount ? (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <p className="text-xs text-muted-foreground px-1">Servicio</p>
+                  {services.length === 0 ? (
+                    <p className="mt-2 rounded-xl bg-background hairline p-3 text-xs text-muted-foreground">
+                      Crea servicios en Ajustes para elegirlos aquí.
+                    </p>
+                  ) : (
+                    <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                      {services.map((service) => (
+                        <button
+                          key={service.id}
+                          type="button"
+                          onClick={() => setServiceId(service.id)}
+                          className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
+                            service.id === serviceId ? "bg-foreground text-background" : "bg-background"
+                          }`}
+                        >
+                          {service.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedService && (
+                    <p className="mt-2 text-[11px] text-muted-foreground px-1">
+                      Precio guardado: {clp(selectedService.price)}. Este cobro usa {clp(serviceAmount)}.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground px-1">Barbero</p>
+                  {staff.length === 0 ? (
+                    <p className="mt-2 rounded-xl bg-background hairline p-3 text-xs text-muted-foreground">
+                      Crea o activa un barbero en Ajustes para registrar servicios.
+                    </p>
+                  ) : (
+                    <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                      {staff.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setStaffId(item.id)}
+                          className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
+                            item.id === staffId ? "bg-foreground text-background" : "bg-background"
+                          }`}
+                        >
+                          {item.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground px-1">Cliente</p>
+                  <input
+                    value={clientName}
+                    onChange={(e) => { setClientName(e.target.value); setPickedClient(null); }}
+                    placeholder="Nombre rápido (opcional)"
+                    className="mt-2 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+                  />
+                  {filteredClients.length > 0 && !pickedClient && (
+                    <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                      {filteredClients.map((client) => (
+                        <button
+                          key={client.id}
+                          type="button"
+                          onClick={() => { setPickedClient(client); setClientName(client.name); }}
+                          className="shrink-0 px-3 h-9 rounded-full bg-muted hairline text-xs active:scale-95 transition-transform"
+                        >
+                          {client.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <DateTimeInput
+                    label="Fecha"
+                    value={dateInputValue(serviceTime)}
+                    type="date"
+                    onChange={(value) => setServiceTime((current) => applyDateInput(current, value))}
+                  />
+                  <DateTimeInput
+                    label="Hora"
+                    value={timeInputValue(serviceTime)}
+                    type="time"
+                    onChange={(value) => setServiceTime((current) => applyTimeInput(current, value))}
+                  />
+                </div>
+
+                <input
+                  inputMode="numeric"
+                  placeholder="Propina $0"
+                  value={tip ? clp(tipAmount) : ""}
+                  onChange={(e) => setTip(e.target.value.replace(/\D/g, ""))}
+                  className="w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+                />
+
+                <div className="rounded-xl bg-background/50 hairline p-3 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Total recibido</span>
+                  <span className="text-base font-semibold tabular">{clp(serviceAmount + tipAmount)}</span>
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground px-1">Método de pago</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {PAYMENT_METHODS.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          onClick={() => setMethod(item.value)}
+                          className={`h-10 rounded-xl hairline flex items-center justify-center gap-2 text-xs font-medium ${
+                            method === item.value ? "bg-foreground text-background" : "bg-background"
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <textarea
+                  placeholder="Notas opcionales"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full min-h-20 px-4 py-3 rounded-xl bg-background hairline text-sm outline-none resize-none focus:border-border-strong"
+                />
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl bg-warning/10 text-warning hairline p-3 text-xs">
+                Ingresa un monto válido para continuar con el servicio.
+              </div>
+            )
+          ) : (
+            <input
+              placeholder="Concepto (ej: arriendo, productos...)"
+              value={concept}
+              onChange={(e) => setConcept(e.target.value)}
+              className="mt-4 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+            />
+          )}
         </div>
 
-        {kind === "ingreso" && (
+        <div className="p-5 pt-3 bg-surface-elevated/95 backdrop-blur">
           <button
-            type="button"
-            onClick={() => setIsService((value) => !value)}
-            className={`mt-4 w-full h-11 rounded-xl hairline text-sm font-medium transition-colors ${
-              isService ? "bg-success/15 text-success" : "bg-background text-foreground"
-            }`}
+            disabled={submitDisabled}
+            onClick={submit}
+            className="w-full min-h-12 py-3 rounded-2xl bg-foreground text-background font-semibold active:scale-[0.98] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            ¿Este ingreso corresponde a un servicio/corte?
+            <CheckCircle2 className="w-4 h-4" /> {saving ? "Registrando" : "Registrar"}
           </button>
-        )}
-
-        <input
-          autoFocus
-          inputMode="numeric"
-          placeholder="$0"
-          value={amount ? clp(parseCurrencyInput(amount)) : ""}
-          onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
-          className="mt-4 w-full bg-transparent text-3xl font-semibold tabular text-center outline-none border-0"
-        />
-
-        {isService ? (
-          <div className="mt-4 space-y-4">
-            <div>
-              <p className="text-xs text-muted-foreground px-1">Servicio</p>
-              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                {services.map((service) => (
-                  <button
-                    key={service.id}
-                    type="button"
-                    onClick={() => { setServiceId(service.id); setAmount(String(service.price)); }}
-                    className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
-                      service.id === serviceId ? "bg-foreground text-background" : "bg-background"
-                    }`}
-                  >
-                    {service.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs text-muted-foreground px-1">Cliente</p>
-              <input
-                value={clientName}
-                onChange={(e) => { setClientName(e.target.value); setPickedClient(null); }}
-                placeholder="Nombre rápido (opcional)"
-                className="mt-2 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
-              />
-              {filteredClients.length > 0 && !pickedClient && (
-                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                  {filteredClients.map((client) => (
-                    <button
-                      key={client.id}
-                      type="button"
-                      onClick={() => { setPickedClient(client); setClientName(client.name); }}
-                      className="shrink-0 px-3 h-9 rounded-full bg-muted hairline text-xs active:scale-95 transition-transform"
-                    >
-                      {client.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="text-xs text-muted-foreground px-1">Barbero</p>
-              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                {staff.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setStaffId(item.id)}
-                    className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
-                      item.id === staffId ? "bg-foreground text-background" : "bg-background"
-                    }`}
-                  >
-                    {item.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <DateTimeInput
-                label="Fecha"
-                value={dateInputValue(serviceTime)}
-                type="date"
-                onChange={(value) => setServiceTime((current) => applyDateInput(current, value))}
-              />
-              <DateTimeInput
-                label="Hora"
-                value={timeInputValue(serviceTime)}
-                type="time"
-                onChange={(value) => setServiceTime((current) => applyTimeInput(current, value))}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              {PAYMENT_METHODS.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => setMethod(item.value)}
-                    className={`h-10 rounded-xl hairline flex items-center justify-center gap-2 text-xs font-medium ${
-                      method === item.value ? "bg-foreground text-background" : "bg-background"
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <input
-              inputMode="numeric"
-              placeholder="Propina $0"
-              value={tip ? clp(tipAmount) : ""}
-              onChange={(e) => setTip(e.target.value.replace(/\D/g, ""))}
-              className="w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
-            />
-            <textarea
-              placeholder="Notas opcionales"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full min-h-20 px-4 py-3 rounded-xl bg-background hairline text-sm outline-none resize-none focus:border-border-strong"
-            />
-            <div className="rounded-xl bg-background/50 hairline p-3 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Total recibido</span>
-              <span className="text-base font-semibold tabular">{clp(serviceAmount + tipAmount)}</span>
-            </div>
-          </div>
-        ) : (
-          <input
-            placeholder="Concepto (ej: arriendo, productos…)"
-            value={concept}
-            onChange={(e) => setConcept(e.target.value)}
-            className="mt-4 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
-          />
-        )}
-
-        <button
-          disabled={saving}
-          onClick={submit}
-          className="mt-5 w-full h-13 py-3.5 rounded-2xl bg-foreground text-background font-semibold active:scale-[0.98] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          <CheckCircle2 className="w-4 h-4" /> Registrar
-        </button>
+        </div>
       </motion.div>
     </motion.div>
   );

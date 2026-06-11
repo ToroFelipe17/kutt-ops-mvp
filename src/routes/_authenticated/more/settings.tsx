@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Check, ChevronLeft } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type ReactNode } from "react";
+import { Check, ChevronLeft, Plus, Scissors, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import {
@@ -17,6 +18,7 @@ import {
   type SimpleScheduleRange,
   type WeekdayId,
 } from "@/lib/business-hours";
+import { clp } from "@/lib/format";
 import { getStoredVisualTheme, setStoredVisualTheme, VISUAL_THEMES, type VisualTheme } from "@/lib/visual-theme";
 import { toast } from "sonner";
 
@@ -24,11 +26,67 @@ export const Route = createFileRoute("/_authenticated/more/settings")({
   component: SettingsPage,
 });
 
+interface StaffRow {
+  id: string;
+  name: string;
+  color: string | null;
+  active: boolean;
+  commission_pct: number;
+}
+
+interface ServiceRow {
+  id: string;
+  name: string;
+  price: number;
+  duration_min: number;
+  active: boolean;
+}
+
+const STAFF_COLORS = ["#10b981", "#38bdf8", "#f59e0b", "#a78bfa", "#f43f5e"];
+
 function SettingsPage() {
   const { business, refresh } = useBusiness();
+  const qc = useQueryClient();
   const [visualTheme, setVisualTheme] = useState<VisualTheme>(() => getStoredVisualTheme());
   const [schedule, setSchedule] = useState<BusinessHoursSchedule>(() => createScheduleFromSimple());
   const [savingHours, setSavingHours] = useState(false);
+  const [newStaffName, setNewStaffName] = useState("");
+  const [newStaffCommission, setNewStaffCommission] = useState("0");
+  const [savingStaff, setSavingStaff] = useState(false);
+  const [updatingStaffId, setUpdatingStaffId] = useState<string | null>(null);
+  const [newServiceName, setNewServiceName] = useState("");
+  const [newServicePrice, setNewServicePrice] = useState("");
+  const [newServiceDuration, setNewServiceDuration] = useState("60");
+  const [savingService, setSavingService] = useState(false);
+  const [updatingServiceId, setUpdatingServiceId] = useState<string | null>(null);
+
+  const { data: staff = [], isLoading: staffLoading } = useQuery({
+    queryKey: ["settings-staff", business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff")
+        .select("id,name,color,active,commission_pct")
+        .eq("business_id", business!.id)
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as StaffRow[];
+    },
+  });
+
+  const { data: services = [], isLoading: servicesLoading } = useQuery({
+    queryKey: ["settings-services", business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("services")
+        .select("id,name,price,duration_min,active")
+        .eq("business_id", business!.id)
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as ServiceRow[];
+    },
+  });
 
   useEffect(() => {
     setVisualTheme(getStoredVisualTheme());
@@ -71,6 +129,117 @@ function SettingsPage() {
     saveBusinessHoursSchedule(business.id, next);
     await refresh();
     toast.success("Horario actualizado");
+  };
+
+  const createStaff = async () => {
+    if (!business || savingStaff) return;
+    const name = newStaffName.trim();
+    if (name.length < 2) {
+      toast.error("Ingresa el nombre del barbero");
+      return;
+    }
+
+    const commission = clampPercent(parseDecimalInput(newStaffCommission));
+    setSavingStaff(true);
+    const { error } = await supabase.from("staff").insert({
+      business_id: business.id,
+      name,
+      color: STAFF_COLORS[staff.length % STAFF_COLORS.length],
+      commission_pct: commission,
+      active: true,
+    });
+    setSavingStaff(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    setNewStaffName("");
+    setNewStaffCommission("0");
+    await qc.invalidateQueries({ queryKey: ["settings-staff", business.id] });
+    await qc.invalidateQueries({ queryKey: ["staff", business.id] });
+    await qc.invalidateQueries({ queryKey: ["caja-staff", business.id] });
+    toast.success("Barbero creado");
+  };
+
+  const toggleStaff = async (member: StaffRow) => {
+    if (!business || updatingStaffId) return;
+    setUpdatingStaffId(member.id);
+    const { error } = await supabase
+      .from("staff")
+      .update({ active: !member.active })
+      .eq("business_id", business.id)
+      .eq("id", member.id);
+    setUpdatingStaffId(null);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    await qc.invalidateQueries({ queryKey: ["settings-staff", business.id] });
+    await qc.invalidateQueries({ queryKey: ["staff", business.id] });
+    await qc.invalidateQueries({ queryKey: ["caja-staff", business.id] });
+  };
+
+  const createService = async () => {
+    if (!business || savingService) return;
+    const name = newServiceName.trim();
+    const price = parseCurrencyInput(newServicePrice);
+    const duration = Math.max(5, parseInt(newServiceDuration, 10) || 60);
+
+    if (name.length < 2) {
+      toast.error("Ingresa el nombre del servicio");
+      return;
+    }
+    if (!price) {
+      toast.error("Ingresa el precio del servicio");
+      return;
+    }
+
+    setSavingService(true);
+    const { error } = await supabase.from("services").insert({
+      business_id: business.id,
+      name,
+      price,
+      duration_min: duration,
+      active: true,
+    });
+    setSavingService(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    setNewServiceName("");
+    setNewServicePrice("");
+    setNewServiceDuration("60");
+    await qc.invalidateQueries({ queryKey: ["settings-services", business.id] });
+    await qc.invalidateQueries({ queryKey: ["services", business.id] });
+    await qc.invalidateQueries({ queryKey: ["caja-services", business.id] });
+    toast.success("Servicio creado");
+  };
+
+  const toggleService = async (service: ServiceRow) => {
+    if (!business || updatingServiceId) return;
+    setUpdatingServiceId(service.id);
+    const { error } = await supabase
+      .from("services")
+      .update({ active: !service.active })
+      .eq("business_id", business.id)
+      .eq("id", service.id);
+    setUpdatingServiceId(null);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    await qc.invalidateQueries({ queryKey: ["settings-services", business.id] });
+    await qc.invalidateQueries({ queryKey: ["services", business.id] });
+    await qc.invalidateQueries({ queryKey: ["caja-services", business.id] });
   };
 
   const setHoursMode = (mode: BusinessHoursMode) => {
@@ -121,10 +290,9 @@ function SettingsPage() {
         </div>
       </header>
 
-      <section className="px-5 mt-2">
-        <div className="rounded-2xl bg-surface hairline p-4">
-          <p className="text-xs text-muted-foreground">Preferencias</p>
-          <h2 className="mt-1 text-base font-semibold">Tono visual</h2>
+      <main className="px-5 mt-2 space-y-3">
+        <SettingsPanel eyebrow="Preferencias visuales" title="Tono visual">
+          <p className="text-xs text-muted-foreground">Elige el tono visual de tu sistema</p>
           <div className="mt-4 grid gap-2">
             {VISUAL_THEMES.map((theme) => (
               <button
@@ -147,23 +315,12 @@ function SettingsPage() {
               </button>
             ))}
           </div>
-        </div>
-      </section>
+        </SettingsPanel>
 
-      <section className="px-5 mt-2">
-        <div className="rounded-2xl bg-surface hairline p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Horario</p>
-              <h2 className="mt-1 text-base font-semibold">
-                {schedule.mode === "simple" ? "Horario simple" : "Personalizar días"}
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {schedule.mode === "simple"
-                  ? `${getSimpleScheduleRangeLabel(schedule.simpleRange)} · ${formatHour(schedule.openHour)} - ${formatHour(schedule.closeHour)}`
-                  : "Edita cada día de forma independiente"}
-              </p>
-            </div>
+        <SettingsPanel
+          eyebrow="Horario"
+          title={schedule.mode === "simple" ? "Horario simple" : "Personalizar días"}
+          action={
             <button
               type="button"
               onClick={saveHours}
@@ -172,7 +329,13 @@ function SettingsPage() {
             >
               {savingHours ? "Guardando" : "Guardar"}
             </button>
-          </div>
+          }
+        >
+          <p className="text-xs text-muted-foreground">
+            {schedule.mode === "simple"
+              ? `${getSimpleScheduleRangeLabel(schedule.simpleRange)} · ${formatHour(schedule.openHour)} - ${formatHour(schedule.closeHour)}`
+              : "Edita cada día de forma independiente"}
+          </p>
 
           <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-background/40 hairline p-1">
             {(["simple", "custom"] as const).map((mode) => (
@@ -240,13 +403,173 @@ function SettingsPage() {
               ))}
             </div>
           )}
-        </div>
-      </section>
+        </SettingsPanel>
 
-      <p className="mt-8 px-8 text-[11px] text-muted-foreground text-center">
-        Próximamente: edición de equipo, servicios y preferencias avanzadas.
-      </p>
+        <SettingsPanel
+          eyebrow="Equipo / Barberos"
+          title="Barberos"
+          action={<Users className="w-4 h-4 text-muted-foreground" />}
+        >
+          <div className="grid gap-2 sm:grid-cols-[1fr_7rem_auto]">
+            <input
+              value={newStaffName}
+              onChange={(e) => setNewStaffName(e.target.value)}
+              placeholder="Nombre del barbero"
+              className="h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+            />
+            <label className="h-12 px-3 rounded-xl bg-background hairline flex flex-col justify-center">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Comisión</span>
+              <input
+                inputMode="decimal"
+                value={newStaffCommission}
+                onChange={(e) => setNewStaffCommission(e.target.value)}
+                className="mt-0.5 bg-transparent text-sm font-medium outline-none"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={createStaff}
+              disabled={!business || savingStaff}
+              className="h-12 px-4 rounded-xl bg-foreground text-background text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Crear
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {staffLoading ? (
+              <p className="text-sm text-muted-foreground">Cargando barberos...</p>
+            ) : staff.length === 0 ? (
+              <p className="rounded-xl bg-background/40 hairline p-3 text-sm text-muted-foreground">
+                Agrega al menos un barbero para usar Agenda y Caja con servicios.
+              </p>
+            ) : (
+              staff.map((member) => (
+                <div key={member.id} className="rounded-xl bg-background/40 hairline p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex items-center gap-3">
+                    <span
+                      className="h-8 w-8 rounded-full shrink-0"
+                      style={{ background: member.color ?? "var(--color-muted)" }}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{member.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {formatPercent(member.commission_pct)} comisión
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleStaff(member)}
+                    disabled={updatingStaffId === member.id}
+                    className={`h-8 px-3 rounded-full text-xs font-medium active:scale-[0.98] transition-transform disabled:opacity-50 ${
+                      member.active ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {member.active ? "Activo" : "Inactivo"}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </SettingsPanel>
+
+        <SettingsPanel
+          eyebrow="Servicios"
+          title="Catálogo"
+          action={<Scissors className="w-4 h-4 text-muted-foreground" />}
+        >
+          <div className="grid gap-2 sm:grid-cols-[1fr_7rem_6rem_auto]">
+            <input
+              value={newServiceName}
+              onChange={(e) => setNewServiceName(e.target.value)}
+              placeholder="Nombre del servicio"
+              className="h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+            />
+            <input
+              inputMode="numeric"
+              value={newServicePrice ? clp(parseCurrencyInput(newServicePrice)) : ""}
+              onChange={(e) => setNewServicePrice(e.target.value.replace(/\D/g, ""))}
+              placeholder="$0"
+              className="h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+            />
+            <label className="h-12 px-3 rounded-xl bg-background hairline flex flex-col justify-center">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Min</span>
+              <input
+                inputMode="numeric"
+                value={newServiceDuration}
+                onChange={(e) => setNewServiceDuration(e.target.value.replace(/\D/g, ""))}
+                className="mt-0.5 bg-transparent text-sm font-medium outline-none"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={createService}
+              disabled={!business || savingService}
+              className="h-12 px-4 rounded-xl bg-foreground text-background text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Crear
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {servicesLoading ? (
+              <p className="text-sm text-muted-foreground">Cargando servicios...</p>
+            ) : services.length === 0 ? (
+              <p className="rounded-xl bg-background/40 hairline p-3 text-sm text-muted-foreground">
+                Crea servicios rápidos para agendar y cobrar sin fricción.
+              </p>
+            ) : (
+              services.map((service) => (
+                <div key={service.id} className="rounded-xl bg-background/40 hairline p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{service.name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {clp(service.price)} · {service.duration_min} min
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleService(service)}
+                    disabled={updatingServiceId === service.id}
+                    className={`h-8 px-3 rounded-full text-xs font-medium active:scale-[0.98] transition-transform disabled:opacity-50 ${
+                      service.active ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {service.active ? "Activo" : "Inactivo"}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </SettingsPanel>
+      </main>
     </div>
+  );
+}
+
+function SettingsPanel({
+  eyebrow,
+  title,
+  action,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl bg-surface hairline p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs text-muted-foreground">{eyebrow}</p>
+          <h2 className="mt-1 text-base font-semibold">{title}</h2>
+        </div>
+        {action}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
   );
 }
 
@@ -354,4 +677,21 @@ function HourStepper({
       </div>
     </div>
   );
+}
+
+function parseCurrencyInput(value: string): number {
+  return parseInt(value.replace(/\D/g, ""), 10) || 0;
+}
+
+function parseDecimalInput(value: string): number {
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatPercent(value: number): string {
+  return `${Number(value ?? 0).toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`;
 }
