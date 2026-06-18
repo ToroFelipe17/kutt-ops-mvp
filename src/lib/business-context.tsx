@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./auth-context";
@@ -19,7 +20,11 @@ interface Ctx {
   refresh: () => Promise<void>;
 }
 
-const BusinessContext = createContext<Ctx>({ business: null, loading: true, refresh: async () => {} });
+const BusinessContext = createContext<Ctx>({
+  business: null,
+  loading: true,
+  refresh: async () => {},
+});
 
 export function BusinessProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();

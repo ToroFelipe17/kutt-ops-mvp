@@ -12,8 +12,18 @@ export const Route = createFileRoute("/_authenticated/more/commissions")({
   component: CommissionsPage,
 });
 
-interface StaffRow { id: string; name: string; commission_pct: number; color: string | null }
-interface PayRow { staff_id: string | null; commission_amount: number | null; amount: number; status: string }
+interface StaffRow {
+  id: string;
+  name: string;
+  commission_pct: number;
+  color: string | null;
+}
+interface PayRow {
+  staff_id: string | null;
+  commission_amount: number | null;
+  amount: number;
+  status: string;
+}
 
 function CommissionsPage() {
   const { business } = useBusiness();
@@ -24,9 +34,11 @@ function CommissionsPage() {
     queryKey: ["com-staff", business?.id],
     enabled: !!business?.id,
     queryFn: async () => {
-      const { data } = await supabase.from("staff")
+      const { data } = await supabase
+        .from("staff")
         .select("id,name,commission_pct,color")
-        .eq("business_id", business!.id).eq("active", true);
+        .eq("business_id", business!.id)
+        .eq("active", true);
       return (data ?? []) as StaffRow[];
     },
   });
@@ -35,10 +47,12 @@ function CommissionsPage() {
     queryKey: ["com-pay", business?.id, from],
     enabled: !!business?.id,
     queryFn: async () => {
-      const { data } = await supabase.from("payments")
+      const { data } = await supabase
+        .from("payments")
         .select("staff_id,commission_amount,amount,status")
         .eq("business_id", business!.id)
-        .gte("created_at", from).lte("created_at", to);
+        .gte("created_at", from)
+        .lte("created_at", to);
       return (data ?? []) as PayRow[];
     },
   });
@@ -68,7 +82,10 @@ function CommissionsPage() {
   return (
     <div className="min-h-screen bg-background pb-28 safe-top">
       <header className="px-5 pt-5 pb-3 flex items-center gap-3">
-        <Link to="/more" className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center">
+        <Link
+          to="/more"
+          className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center"
+        >
           <ChevronLeft className="w-4 h-4" />
         </Link>
         <div>
@@ -91,15 +108,25 @@ function CommissionsPage() {
             return (
               <li key={s.id} className="rounded-2xl bg-surface hairline p-4">
                 <div className="flex items-center gap-3">
-                  <span className="h-10 w-10 rounded-full grid place-items-center text-sm font-semibold" style={{ background: (s.color ?? "#10b981") + "30", color: s.color ?? "#10b981" }}>
+                  <span
+                    className="h-10 w-10 rounded-full grid place-items-center text-sm font-semibold"
+                    style={{
+                      background: (s.color ?? "#10b981") + "30",
+                      color: s.color ?? "#10b981",
+                    }}
+                  >
                     {s.name.slice(0, 1).toUpperCase()}
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{s.name}</p>
-                    <p className="text-[11px] text-muted-foreground">{stats.count} pagos · ventas {clp(stats.sales)}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {stats.count} pagos · ventas {clp(stats.sales)}
+                    </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-base font-semibold tabular text-success">{clp(stats.commission)}</p>
+                    <p className="text-base font-semibold tabular text-success">
+                      {clp(stats.commission)}
+                    </p>
                     <p className="text-[10px] text-muted-foreground">a pagar</p>
                   </div>
                 </div>
@@ -115,7 +142,9 @@ function CommissionsPage() {
                     onChange={(e) => updatePct.mutate({ id: s.id, pct: Number(e.target.value) })}
                     className="flex-1 accent-foreground"
                   />
-                  <p className="w-12 text-right text-sm font-semibold tabular">{Math.round(s.commission_pct)}%</p>
+                  <p className="w-12 text-right text-sm font-semibold tabular">
+                    {Math.round(s.commission_pct)}%
+                  </p>
                 </div>
               </li>
             );

@@ -12,9 +12,22 @@ export const Route = createFileRoute("/_authenticated/new")({
   component: NewAppointment,
 });
 
-interface Service { id: string; name: string; duration_min: number; price: number; }
-interface Staff { id: string; name: string; color: string | null; }
-interface Client { id: string; name: string; phone: string | null; }
+interface Service {
+  id: string;
+  name: string;
+  duration_min: number;
+  price: number;
+}
+interface Staff {
+  id: string;
+  name: string;
+  color: string | null;
+}
+interface Client {
+  id: string;
+  name: string;
+  phone: string | null;
+}
 
 function NewAppointment() {
   const { business } = useBusiness();
@@ -33,7 +46,12 @@ function NewAppointment() {
     queryKey: ["services", business?.id],
     enabled: !!business?.id,
     queryFn: async () => {
-      const { data } = await supabase.from("services").select("id,name,duration_min,price").eq("business_id", business!.id).eq("active", true).order("name");
+      const { data } = await supabase
+        .from("services")
+        .select("id,name,duration_min,price")
+        .eq("business_id", business!.id)
+        .eq("active", true)
+        .order("name");
       return (data ?? []) as Service[];
     },
   });
@@ -41,7 +59,12 @@ function NewAppointment() {
     queryKey: ["staff", business?.id],
     enabled: !!business?.id,
     queryFn: async () => {
-      const { data } = await supabase.from("staff").select("id,name,color").eq("business_id", business!.id).eq("active", true).order("name");
+      const { data } = await supabase
+        .from("staff")
+        .select("id,name,color")
+        .eq("business_id", business!.id)
+        .eq("active", true)
+        .order("name");
       return (data ?? []) as Staff[];
     },
   });
@@ -49,16 +72,28 @@ function NewAppointment() {
     queryKey: ["clients-recent", business?.id],
     enabled: !!business?.id,
     queryFn: async () => {
-      const { data } = await supabase.from("clients").select("id,name,phone").eq("business_id", business!.id).order("last_visit_at", { ascending: false, nullsFirst: false }).limit(20);
+      const { data } = await supabase
+        .from("clients")
+        .select("id,name,phone")
+        .eq("business_id", business!.id)
+        .order("last_visit_at", { ascending: false, nullsFirst: false })
+        .limit(20);
       return (data ?? []) as Client[];
     },
   });
 
   // Auto-pick defaults
-  useEffect(() => { if (!staffId && staff[0]) setStaffId(staff[0].id); }, [staff, staffId]);
-  useEffect(() => { if (!serviceId && services[0]) setServiceId(services[0].id); }, [services, serviceId]);
+  useEffect(() => {
+    if (!staffId && staff[0]) setStaffId(staff[0].id);
+  }, [staff, staffId]);
+  useEffect(() => {
+    if (!serviceId && services[0]) setServiceId(services[0].id);
+  }, [services, serviceId]);
 
-  const service = useMemo(() => services.find((s) => s.id === serviceId) ?? null, [services, serviceId]);
+  const service = useMemo(
+    () => services.find((s) => s.id === serviceId) ?? null,
+    [services, serviceId],
+  );
 
   const filteredClients = useMemo(() => {
     if (!clientName.trim()) return recentClients.slice(0, 5);
@@ -86,7 +121,11 @@ function NewAppointment() {
         else {
           const { data: created, error } = await supabase
             .from("clients")
-            .insert({ business_id: business.id, name: clientName.trim(), phone: clientPhone.trim() || null })
+            .insert({
+              business_id: business.id,
+              name: clientName.trim(),
+              phone: clientPhone.trim() || null,
+            })
             .select("id")
             .single();
           if (error) throw error;
@@ -125,7 +164,10 @@ function NewAppointment() {
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom flex flex-col">
       <header className="px-4 pt-4 pb-2 flex items-center gap-3">
-        <button onClick={() => navigate({ to: "/today" })} className="h-10 w-10 rounded-full bg-surface hairline grid place-items-center active:scale-90 transition-transform">
+        <button
+          onClick={() => navigate({ to: "/today" })}
+          className="h-10 w-10 rounded-full bg-surface hairline grid place-items-center active:scale-90 transition-transform"
+        >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <h1 className="text-lg font-semibold">Nueva cita</h1>
@@ -137,7 +179,10 @@ function NewAppointment() {
           <input
             autoFocus
             value={clientName}
-            onChange={(e) => { setClientName(e.target.value); setPickedClient(null); }}
+            onChange={(e) => {
+              setClientName(e.target.value);
+              setPickedClient(null);
+            }}
             placeholder="Nombre"
             className="w-full h-14 px-4 rounded-2xl bg-surface hairline text-[15px] focus:outline-none focus:hairline-strong"
           />
@@ -147,7 +192,11 @@ function NewAppointment() {
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => { setPickedClient(c); setClientName(c.name); setClientPhone(c.phone ?? ""); }}
+                  onClick={() => {
+                    setPickedClient(c);
+                    setClientName(c.name);
+                    setClientPhone(c.phone ?? "");
+                  }}
                   className="shrink-0 px-3 h-9 rounded-full bg-muted hairline text-xs active:scale-95 transition-transform"
                 >
                   {c.name}
@@ -202,7 +251,10 @@ function NewAppointment() {
                   onClick={() => setStaffId(s.id)}
                   className={`flex items-center gap-2 px-4 h-11 rounded-full hairline active:scale-95 transition-transform ${active ? "bg-foreground text-background" : "bg-surface"}`}
                 >
-                  <span className="h-2 w-2 rounded-full" style={{ background: s.color ?? "#10b981" }} />
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: s.color ?? "#10b981" }}
+                  />
                   <span className="text-sm font-medium">{s.name}</span>
                 </button>
               );
@@ -215,7 +267,11 @@ function NewAppointment() {
           <div className="rounded-2xl bg-surface hairline p-4 flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground">
-                {time.toLocaleDateString("es-CL", { weekday: "short", day: "numeric", month: "short" })}
+                {time.toLocaleDateString("es-CL", {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "short",
+                })}
               </p>
               <p className="text-3xl font-semibold tabular mt-0.5">{shortTime(time)}</p>
             </div>
@@ -235,7 +291,9 @@ function NewAppointment() {
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <label className="rounded-xl bg-surface hairline p-3">
-              <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">Fecha</span>
+              <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
+                Fecha
+              </span>
               <input
                 type="date"
                 value={dateInputValue(time)}
@@ -244,7 +302,9 @@ function NewAppointment() {
               />
             </label>
             <label className="rounded-xl bg-surface hairline p-3">
-              <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">Hora</span>
+              <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
+                Hora
+              </span>
               <input
                 type="time"
                 value={timeInputValue(time)}
@@ -254,8 +314,20 @@ function NewAppointment() {
             </label>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setTime(currentMinute())} className="h-11 rounded-xl bg-muted hairline text-sm active:scale-95 transition-transform">Ahora</button>
-            <button type="button" onClick={() => setTime(addMinutes(roundUpTo15(new Date()), 60))} className="h-11 rounded-xl bg-muted hairline text-sm active:scale-95 transition-transform">En 1h</button>
+            <button
+              type="button"
+              onClick={() => setTime(currentMinute())}
+              className="h-11 rounded-xl bg-muted hairline text-sm active:scale-95 transition-transform"
+            >
+              Ahora
+            </button>
+            <button
+              type="button"
+              onClick={() => setTime(addMinutes(roundUpTo15(new Date()), 60))}
+              className="h-11 rounded-xl bg-muted hairline text-sm active:scale-95 transition-transform"
+            >
+              En 1h
+            </button>
           </div>
           {outsideHours && (
             <p className="mt-2 text-xs text-warning px-1">
@@ -307,7 +379,9 @@ function NewAppointment() {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section className="mt-5">
-      <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2 px-1">{label}</p>
+      <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2 px-1">
+        {label}
+      </p>
       {children}
     </section>
   );

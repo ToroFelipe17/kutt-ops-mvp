@@ -18,8 +18,7 @@ export function BottomNav() {
           {items.map((it) => {
             const Icon = it.icon;
             const active =
-              loc.pathname === it.to ||
-              (it.to !== "/today" && loc.pathname.startsWith(it.to));
+              loc.pathname === it.to || (it.to !== "/today" && loc.pathname.startsWith(it.to));
             return (
               <Link
                 key={it.to}

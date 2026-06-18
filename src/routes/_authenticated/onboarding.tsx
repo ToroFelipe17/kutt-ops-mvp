@@ -5,7 +5,12 @@ import { ArrowRight, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { useBusiness } from "@/lib/business-context";
-import { getStoredVisualTheme, setStoredVisualTheme, VISUAL_THEMES, type VisualTheme } from "@/lib/visual-theme";
+import {
+  getStoredVisualTheme,
+  setStoredVisualTheme,
+  VISUAL_THEMES,
+  type VisualTheme,
+} from "@/lib/visual-theme";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
@@ -65,10 +70,14 @@ function Onboarding() {
 
       // First barber + default services
       await Promise.all([
-        supabase.from("staff").insert({ business_id: biz.id, name: barber.trim() || "Barbero 1", color: LEGACY_PRIMARY_COLOR }),
-        supabase.from("services").insert(
-          DEFAULT_SERVICES.map((s) => ({ ...s, business_id: biz.id }))
-        ),
+        supabase.from("staff").insert({
+          business_id: biz.id,
+          name: barber.trim() || "Barbero 1",
+          color: LEGACY_PRIMARY_COLOR,
+        }),
+        supabase
+          .from("services")
+          .insert(DEFAULT_SERVICES.map((s) => ({ ...s, business_id: biz.id }))),
         supabase.from("profiles").update({ default_business_id: biz.id }).eq("id", user.id),
       ]);
 
@@ -84,9 +93,9 @@ function Onboarding() {
 
   const canNext =
     (step === 0 && name.trim().length >= 2) ||
-    (step === 1) ||
+    step === 1 ||
     (step === 2 && barber.trim().length >= 2) ||
-    (step === 3);
+    step === 3;
 
   return (
     <div className="min-h-screen bg-background flex flex-col safe-top safe-bottom">
@@ -110,10 +119,7 @@ function Onboarding() {
           transition={{ duration: 0.3 }}
         >
           {step === 0 && (
-            <Step
-              title="¿Cómo se llama tu barbería?"
-              hint="Aparecerá en tu app y mensajes."
-            >
+            <Step title="¿Cómo se llama tu barbería?" hint="Aparecerá en tu app y mensajes.">
               <input
                 autoFocus
                 value={name}
@@ -172,7 +178,13 @@ function Onboarding() {
             <Step title="Horario base" hint="Cuándo trabajas. Lo cambias después.">
               <div className="grid grid-cols-2 gap-3">
                 <HourPicker label="Abre" value={open} onChange={setOpen} min={6} max={close - 1} />
-                <HourPicker label="Cierra" value={close} onChange={setClose} min={open + 1} max={23} />
+                <HourPicker
+                  label="Cierra"
+                  value={close}
+                  onChange={setClose}
+                  min={open + 1}
+                  max={23}
+                />
               </div>
               <div className="mt-6 p-4 rounded-2xl bg-surface hairline">
                 <p className="text-sm text-muted-foreground">Crearemos servicios base:</p>
@@ -212,7 +224,15 @@ function Onboarding() {
   );
 }
 
-function Step({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Step({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <h2 className="text-[26px] leading-tight font-semibold tracking-tight">{title}</h2>
@@ -222,7 +242,19 @@ function Step({ title, hint, children }: { title: string; hint?: string; childre
   );
 }
 
-function HourPicker({ label, value, onChange, min, max }: { label: string; value: number; onChange: (v: number) => void; min: number; max: number }) {
+function HourPicker({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+}) {
   return (
     <div className="rounded-2xl bg-surface hairline p-4">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -231,13 +263,17 @@ function HourPicker({ label, value, onChange, min, max }: { label: string; value
           type="button"
           onClick={() => onChange(Math.max(min, value - 1))}
           className="h-9 w-9 rounded-full bg-muted active:scale-90 transition-transform grid place-items-center text-lg"
-        >−</button>
+        >
+          −
+        </button>
         <span className="text-2xl font-semibold tabular">{String(value).padStart(2, "0")}:00</span>
         <button
           type="button"
           onClick={() => onChange(Math.min(max, value + 1))}
           className="h-9 w-9 rounded-full bg-muted active:scale-90 transition-transform grid place-items-center text-lg"
-        >+</button>
+        >
+          +
+        </button>
       </div>
     </div>
   );

@@ -34,21 +34,21 @@ export interface CashMovementRow {
 }
 
 export interface DayTotals {
-  sales: number;          // Service sales only, excluding tips
+  sales: number; // Service sales only, excluding tips
   tips: number;
-  received: number;       // Sales + tips
+  received: number; // Sales + tips
   cash: number;
   transfer: number;
   card: number;
-  pending: number;        // Citas no cobradas
-  commissions: number;    // Suma comisiones congeladas
+  pending: number; // Citas no cobradas
+  commissions: number; // Suma comisiones congeladas
   expenses: number;
   extraIncome: number;
-  cashOnHand: number;     // efectivo + ingresos manuales − egresos
+  cashOnHand: number; // efectivo + ingresos manuales − egresos
   reconciled: number;
   unreconciled: number;
-  profit: number;         // sales − commissions − expenses
-  ivaEstimated: number;   // ~19% sobre ventas (CL)
+  profit: number; // sales − commissions − expenses
+  ivaEstimated: number; // ~19% sobre ventas (CL)
   count: number;
 }
 
@@ -85,9 +85,7 @@ export function computeDayTotals(
   const cash = sum(payments.filter((p) => p.method === "efectivo").map((p) => p.amount));
   const transfer = sum(payments.filter((p) => p.method === "transferencia").map((p) => p.amount));
   const card = sum(
-    payments
-      .filter((p) => p.method === "debito" || p.method === "credito")
-      .map((p) => p.amount),
+    payments.filter((p) => p.method === "debito" || p.method === "credito").map((p) => p.amount),
   );
   const sales = cash + transfer + card;
   const tips = sum(payments.map(getPaymentTipAmount));
@@ -100,7 +98,7 @@ export function computeDayTotals(
   const unreconciled = sum(payments.filter((p) => p.status !== "conciliado").map((p) => p.amount));
   const cashOnHand = cash + extraIncome - expenses;
   const profit = sales - commissions - expenses;
-  const ivaEstimated = Math.round(sales / 1.19 * 0.19);
+  const ivaEstimated = Math.round((sales / 1.19) * 0.19);
 
   return {
     sales,

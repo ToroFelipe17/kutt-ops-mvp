@@ -49,9 +49,11 @@ function AuthPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error";
       toast.error(
-        msg.includes("Invalid login") ? "Correo o contraseña incorrectos" :
-        msg.includes("already registered") ? "Ese correo ya está registrado" :
-        msg
+        msg.includes("Invalid login")
+          ? "Correo o contraseña incorrectos"
+          : msg.includes("already registered")
+            ? "Ese correo ya está registrado"
+            : msg,
       );
     } finally {
       setBusy(false);
@@ -68,7 +70,9 @@ function AuthPage() {
           className="mb-10"
         >
           <div className="flex items-center gap-2 mb-8">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-success to-info grid place-items-center text-background font-bold text-sm">K</div>
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-success to-info grid place-items-center text-background font-bold text-sm">
+              K
+            </div>
             <span className="text-base font-semibold tracking-tight">KUTT</span>
           </div>
           <h1 className="text-[28px] leading-tight font-semibold tracking-tight">
@@ -130,9 +134,13 @@ function AuthPage() {
           className="mt-6 text-sm text-muted-foreground active:text-foreground transition-colors text-center"
         >
           {mode === "login" ? (
-            <>¿Sin cuenta? <span className="text-foreground font-medium">Crear una</span></>
+            <>
+              ¿Sin cuenta? <span className="text-foreground font-medium">Crear una</span>
+            </>
           ) : (
-            <>¿Ya tienes cuenta? <span className="text-foreground font-medium">Entrar</span></>
+            <>
+              ¿Ya tienes cuenta? <span className="text-foreground font-medium">Entrar</span>
+            </>
           )}
         </button>
       </div>

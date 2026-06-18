@@ -2,14 +2,29 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Banknote, CheckCircle2, CreditCard, MessageCircle, MoreHorizontal, Plus, Send, Wallet, X } from "lucide-react";
+import {
+  Banknote,
+  CheckCircle2,
+  CreditCard,
+  MessageCircle,
+  MoreHorizontal,
+  Plus,
+  Send,
+  Wallet,
+  X,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 import { useBusiness } from "@/lib/business-context";
 import { BottomNav } from "@/components/BottomNav";
 import { StatusBadge, type AppointmentStatus } from "@/components/StatusBadge";
 import { clp, endOfDay, shortTime, startOfDay, whatsappLink } from "@/lib/format";
-import { encodePaymentNotes, getPaymentTipAmount, methodLabel, type PaymentMethod } from "@/lib/finance";
+import {
+  encodePaymentNotes,
+  getPaymentTipAmount,
+  methodLabel,
+  type PaymentMethod,
+} from "@/lib/finance";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/today")({
@@ -31,7 +46,6 @@ interface AppointmentRow {
 }
 
 function Today() {
-  
   const { business } = useBusiness();
   const qc = useQueryClient();
   const [paymentTarget, setPaymentTarget] = useState<AppointmentRow | null>(null);
@@ -42,7 +56,9 @@ function Today() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("appointments")
-        .select("id,starts_at,duration_min,price,status,client_name_snapshot,service_name_snapshot,notes,staff_id,staff:staff_id(name,color,commission_pct),client:client_id(phone)")
+        .select(
+          "id,starts_at,duration_min,price,status,client_name_snapshot,service_name_snapshot,notes,staff_id,staff:staff_id(name,color,commission_pct),client:client_id(phone)",
+        )
         .eq("business_id", business!.id)
         .gte("starts_at", startOfDay().toISOString())
         .lte("starts_at", endOfDay().toISOString())
@@ -72,14 +88,34 @@ function Today() {
     if (!business?.id) return;
     const ch = supabase
       .channel(`today:${business.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "appointments", filter: `business_id=eq.${business.id}` }, () => {
-        qc.invalidateQueries({ queryKey: ["today", business.id] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `business_id=eq.${business.id}` }, () => {
-        qc.invalidateQueries({ queryKey: ["today-payments", business.id] });
-      })
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "appointments",
+          filter: `business_id=eq.${business.id}`,
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ["today", business.id] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "payments",
+          filter: `business_id=eq.${business.id}`,
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ["today-payments", business.id] });
+        },
+      )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [business?.id, qc]);
 
   const totals = useMemo(() => {
@@ -88,7 +124,9 @@ function Today() {
     const pending = appts
       .filter((a) => a.status !== "pagado" && a.status !== "completado" && a.status !== "cancelado")
       .reduce((s, a) => s + (a.price ?? 0), 0);
-    const cash = payments.filter((p) => p.method === "efectivo").reduce((s, p) => s + (p.amount ?? 0), 0);
+    const cash = payments
+      .filter((p) => p.method === "efectivo")
+      .reduce((s, p) => s + (p.amount ?? 0), 0);
     return { revenue, tips, pending, cash, count: appts.length };
   }, [appts, payments]);
 
@@ -137,7 +175,10 @@ function Today() {
         notes: encodePaymentNotes(notes, tipAmount),
       });
       if (e1) throw e1;
-      const { error: e2 } = await supabase.from("appointments").update({ status: "pagado" }).eq("id", a.id);
+      const { error: e2 } = await supabase
+        .from("appointments")
+        .update({ status: "pagado" })
+        .eq("id", a.id);
       if (e2) throw e2;
     },
     onSuccess: () => {
@@ -150,7 +191,9 @@ function Today() {
   });
 
   const now = new Date();
-  const upcoming = appts.find((a) => new Date(a.starts_at) >= now && a.status !== "cancelado" && a.status !== "completado");
+  const upcoming = appts.find(
+    (a) => new Date(a.starts_at) >= now && a.status !== "cancelado" && a.status !== "completado",
+  );
 
   return (
     <div className="min-h-screen bg-background pb-28 safe-top">
@@ -199,15 +242,22 @@ function Today() {
       {/* Próxima cita */}
       {upcoming && (
         <section className="px-5 mt-5">
-          <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2 px-1">Próxima</p>
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2 px-1">
+            Próxima
+          </p>
           <div className="rounded-2xl bg-surface hairline p-4">
             <div className="flex items-baseline justify-between">
-              <span className="text-2xl font-semibold tabular">{shortTime(upcoming.starts_at)}</span>
+              <span className="text-2xl font-semibold tabular">
+                {shortTime(upcoming.starts_at)}
+              </span>
               <StatusBadge status={upcoming.status} />
             </div>
-            <p className="mt-1 text-base font-medium">{upcoming.client_name_snapshot ?? "Cliente"}</p>
+            <p className="mt-1 text-base font-medium">
+              {upcoming.client_name_snapshot ?? "Cliente"}
+            </p>
             <p className="text-sm text-muted-foreground">
-              {upcoming.service_name_snapshot ?? "—"} · {upcoming.staff?.name ?? "—"} · {clp(upcoming.price)}
+              {upcoming.service_name_snapshot ?? "—"} · {upcoming.staff?.name ?? "—"} ·{" "}
+              {clp(upcoming.price)}
             </p>
           </div>
         </section>
@@ -217,7 +267,9 @@ function Today() {
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between px-1 mb-3">
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Agenda hoy</p>
-          <Link to="/agenda" className="text-xs text-muted-foreground active:text-foreground">Ver toda</Link>
+          <Link to="/agenda" className="text-xs text-muted-foreground active:text-foreground">
+            Ver toda
+          </Link>
         </div>
 
         {isLoading ? (
@@ -262,7 +314,11 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "wa
   return (
     <div className="rounded-xl bg-background/40 hairline p-2.5">
       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 text-sm font-semibold tabular ${tone === "warning" ? "text-warning" : "text-foreground"}`}>{value}</p>
+      <p
+        className={`mt-0.5 text-sm font-semibold tabular ${tone === "warning" ? "text-warning" : "text-foreground"}`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -292,7 +348,7 @@ function AppointmentRowCard({
   const phone = a.client?.phone;
   const wa = whatsappLink(
     phone,
-    `Hola ${a.client_name_snapshot ?? ""}, te recuerdo tu cita a las ${shortTime(a.starts_at)}.`
+    `Hola ${a.client_name_snapshot ?? ""}, te recuerdo tu cita a las ${shortTime(a.starts_at)}.`,
   );
   const isPaid = a.status === "pagado" || a.status === "completado";
 
@@ -303,8 +359,12 @@ function AppointmentRowCard({
         className="w-full p-3.5 flex items-center gap-3 active:bg-surface-elevated transition-colors text-left"
       >
         <div className="flex flex-col items-center w-12 shrink-0">
-          <span className="text-[11px] text-muted-foreground">{shortTime(a.starts_at).split(":")[0]}h</span>
-          <span className="text-lg font-semibold tabular leading-tight">{shortTime(a.starts_at)}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {shortTime(a.starts_at).split(":")[0]}h
+          </span>
+          <span className="text-lg font-semibold tabular leading-tight">
+            {shortTime(a.starts_at)}
+          </span>
         </div>
         <span
           className="w-1 self-stretch rounded-full"
@@ -412,9 +472,14 @@ function PaymentSheet({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-muted-foreground">Registrar pago</p>
-            <h2 className="text-lg font-semibold">{appointment.client_name_snapshot ?? "Cliente"}</h2>
+            <h2 className="text-lg font-semibold">
+              {appointment.client_name_snapshot ?? "Cliente"}
+            </h2>
           </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full bg-muted grid place-items-center">
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full bg-muted grid place-items-center"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -515,8 +580,8 @@ function ActionButton({
     tone === "success"
       ? "bg-success text-success-foreground"
       : tone === "destructive"
-      ? "bg-destructive/15 text-destructive"
-      : "bg-muted text-foreground";
+        ? "bg-destructive/15 text-destructive"
+        : "bg-muted text-foreground";
   return (
     <button
       onClick={onClick}

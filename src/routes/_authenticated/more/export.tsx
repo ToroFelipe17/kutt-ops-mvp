@@ -5,14 +5,23 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { clp } from "@/lib/format";
-import { getPaymentDisplayNotes, getPaymentTipAmount, monthRange, methodLabel, type PaymentRow } from "@/lib/finance";
+import {
+  getPaymentDisplayNotes,
+  getPaymentTipAmount,
+  monthRange,
+  methodLabel,
+  type PaymentRow,
+} from "@/lib/finance";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/export")({
   component: ExportPage,
 });
 
-interface StaffRow { id: string; name: string }
+interface StaffRow {
+  id: string;
+  name: string;
+}
 
 function ExportPage() {
   const { business } = useBusiness();
@@ -26,10 +35,14 @@ function ExportPage() {
     queryKey: ["exp-pay", business?.id, from],
     enabled: !!business?.id,
     queryFn: async () => {
-      const { data } = await supabase.from("payments")
-        .select("id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at")
+      const { data } = await supabase
+        .from("payments")
+        .select(
+          "id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+        )
         .eq("business_id", business!.id)
-        .gte("created_at", from).lte("created_at", to)
+        .gte("created_at", from)
+        .lte("created_at", to)
         .order("created_at");
       return (data ?? []) as PaymentRow[];
     },
@@ -39,7 +52,10 @@ function ExportPage() {
     queryKey: ["exp-staff", business?.id],
     enabled: !!business?.id,
     queryFn: async () => {
-      const { data } = await supabase.from("staff").select("id,name").eq("business_id", business!.id);
+      const { data } = await supabase
+        .from("staff")
+        .select("id,name")
+        .eq("business_id", business!.id);
       return (data ?? []) as StaffRow[];
     },
   });
@@ -49,13 +65,29 @@ function ExportPage() {
   const tips = payments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
   const received = sales + tips;
   const cash = payments.filter((p) => p.method === "efectivo").reduce((s, p) => s + p.amount, 0);
-  const transfer = payments.filter((p) => p.method === "transferencia").reduce((s, p) => s + p.amount, 0);
-  const card = payments.filter((p) => p.method === "debito" || p.method === "credito").reduce((s, p) => s + p.amount, 0);
+  const transfer = payments
+    .filter((p) => p.method === "transferencia")
+    .reduce((s, p) => s + p.amount, 0);
+  const card = payments
+    .filter((p) => p.method === "debito" || p.method === "credito")
+    .reduce((s, p) => s + p.amount, 0);
   const commissions = payments.reduce((s, p) => s + (p.commission_amount ?? 0), 0);
 
   const downloadCSV = () => {
     const rows = [
-      ["fecha", "hora", "metodo", "estado", "venta_clp", "propina_clp", "total_recibido_clp", "barbero", "comision_pct", "comision_clp", "notas"],
+      [
+        "fecha",
+        "hora",
+        "metodo",
+        "estado",
+        "venta_clp",
+        "propina_clp",
+        "total_recibido_clp",
+        "barbero",
+        "comision_pct",
+        "comision_clp",
+        "notas",
+      ],
       ...payments.map((p) => {
         const d = new Date(p.created_at);
         const tip = getPaymentTipAmount(p);
@@ -67,14 +99,16 @@ function ExportPage() {
           String(p.amount),
           String(tip),
           String(p.amount + tip),
-          p.staff_id ? staffMap[p.staff_id] ?? "" : "",
+          p.staff_id ? (staffMap[p.staff_id] ?? "") : "",
           p.commission_pct != null ? String(p.commission_pct) : "",
           p.commission_amount != null ? String(p.commission_amount) : "",
           getPaymentDisplayNotes(p.notes).replace(/[\n,;]/g, " "),
         ];
       }),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = rows
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -121,11 +155,13 @@ function ExportPage() {
 <h2>Detalle</h2>
 <table>
   <tr><th>Fecha</th><th>Método</th><th>Barbero</th><th>Estado</th><th class="right">Venta</th><th class="right">Propina</th><th class="right">Recibido</th></tr>
-  ${payments.map((p) => {
-    const d = new Date(p.created_at);
-    const tip = getPaymentTipAmount(p);
-    return `<tr><td>${d.toLocaleDateString("es-CL")} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? staffMap[p.staff_id] ?? "" : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(p.amount + tip)}</td></tr>`;
-  }).join("")}
+  ${payments
+    .map((p) => {
+      const d = new Date(p.created_at);
+      const tip = getPaymentTipAmount(p);
+      return `<tr><td>${d.toLocaleDateString("es-CL")} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(p.amount + tip)}</td></tr>`;
+    })
+    .join("")}
 </table>
 <script>window.onload=()=>setTimeout(()=>window.print(),300)</script>
 </body></html>`);
@@ -135,7 +171,10 @@ function ExportPage() {
   return (
     <div className="min-h-screen bg-background pb-28 safe-top">
       <header className="px-5 pt-5 pb-3 flex items-center gap-3">
-        <Link to="/more" className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center">
+        <Link
+          to="/more"
+          className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center"
+        >
           <ChevronLeft className="w-4 h-4" />
         </Link>
         <div>
@@ -170,10 +209,16 @@ function ExportPage() {
       </section>
 
       <section className="px-5 mt-5 space-y-2">
-        <button onClick={printPDF} className="w-full h-14 rounded-2xl bg-foreground text-background font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+        <button
+          onClick={printPDF}
+          className="w-full h-14 rounded-2xl bg-foreground text-background font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+        >
           <FileText className="w-4 h-4" /> Imprimir / PDF
         </button>
-        <button onClick={downloadCSV} className="w-full h-14 rounded-2xl bg-surface hairline font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+        <button
+          onClick={downloadCSV}
+          className="w-full h-14 rounded-2xl bg-surface hairline font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+        >
           <Download className="w-4 h-4" /> Descargar CSV
         </button>
       </section>

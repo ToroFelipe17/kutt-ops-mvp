@@ -27,7 +27,10 @@ function NotFoundComponent() {
       <div className="text-center">
         <h1 className="text-6xl font-semibold tracking-tight">404</h1>
         <p className="mt-3 text-sm text-muted-foreground">Página no encontrada</p>
-        <a href="/" className="mt-6 inline-block rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background">
+        <a
+          href="/"
+          className="mt-6 inline-block rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background"
+        >
           Volver
         </a>
       </div>
@@ -44,7 +47,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <h1 className="text-lg font-semibold">Algo no cargó</h1>
         <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
         <button
-          onClick={() => { router.invalidate(); reset(); }}
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
           className="mt-5 rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background"
         >
           Reintentar
@@ -58,14 +64,29 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" },
+      {
+        name: "viewport",
+        content: "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1",
+      },
       { name: "theme-color", content: "#0d0d10" },
       { title: "KUTT — Barber shop operations" },
-      { name: "description", content: "Minimal daily operations for barber shops: appointments, payments, cash and clients." },
+      {
+        name: "description",
+        content:
+          "Minimal daily operations for barber shops: appointments, payments, cash and clients.",
+      },
       { property: "og:title", content: "KUTT — Barber shop operations" },
       { name: "twitter:title", content: "KUTT — Barber shop operations" },
-      { property: "og:description", content: "Minimal daily operations for barber shops: appointments, payments, cash and clients." },
-      { name: "twitter:description", content: "Minimal daily operations for barber shops: appointments, payments, cash and clients." },
+      {
+        property: "og:description",
+        content:
+          "Minimal daily operations for barber shops: appointments, payments, cash and clients.",
+      },
+      {
+        name: "twitter:description",
+        content:
+          "Minimal daily operations for barber shops: appointments, payments, cash and clients.",
+      },
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:type", content: "website" },
     ],

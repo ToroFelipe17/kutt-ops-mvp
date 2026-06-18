@@ -36,9 +36,22 @@ export const Route = createFileRoute("/_authenticated/caja")({
   component: CajaPage,
 });
 
-interface ServiceRow { id: string; name: string; duration_min: number; price: number }
-interface StaffRow { id: string; name: string; color: string | null }
-interface ClientRow { id: string; name: string; phone: string | null }
+interface ServiceRow {
+  id: string;
+  name: string;
+  duration_min: number;
+  price: number;
+}
+interface StaffRow {
+  id: string;
+  name: string;
+  color: string | null;
+}
+interface ClientRow {
+  id: string;
+  name: string;
+  phone: string | null;
+}
 
 function CajaPage() {
   const { business } = useBusiness();
@@ -51,7 +64,9 @@ function CajaPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payments")
-        .select("id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at")
+        .select(
+          "id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+        )
         .eq("business_id", business!.id)
         .gte("created_at", from)
         .lte("created_at", to)
@@ -140,17 +155,46 @@ function CajaPage() {
     if (!business?.id) return;
     const ch = supabase
       .channel(`caja:${business.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `business_id=eq.${business.id}` }, () => {
-        qc.invalidateQueries({ queryKey: ["caja-payments", business.id, from] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "cash_movements", filter: `business_id=eq.${business.id}` }, () => {
-        qc.invalidateQueries({ queryKey: ["caja-mov", business.id, from] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "appointments", filter: `business_id=eq.${business.id}` }, () => {
-        qc.invalidateQueries({ queryKey: ["caja-pending", business.id, from] });
-      })
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "payments",
+          filter: `business_id=eq.${business.id}`,
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ["caja-payments", business.id, from] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cash_movements",
+          filter: `business_id=eq.${business.id}`,
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ["caja-mov", business.id, from] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "appointments",
+          filter: `business_id=eq.${business.id}`,
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ["caja-pending", business.id, from] });
+        },
+      )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [business?.id, from, qc]);
 
   const totals = useMemo(
@@ -212,9 +256,21 @@ function CajaPage() {
           </div>
 
           <div className="relative mt-6 grid grid-cols-3 gap-2">
-            <Mini icon={<Banknote className="w-3.5 h-3.5" />} label="Efectivo" value={clp(totals.cash)} />
-            <Mini icon={<Send className="w-3.5 h-3.5" />} label="Transfer." value={clp(totals.transfer)} />
-            <Mini icon={<CreditCard className="w-3.5 h-3.5" />} label="Tarjeta" value={clp(totals.card)} />
+            <Mini
+              icon={<Banknote className="w-3.5 h-3.5" />}
+              label="Efectivo"
+              value={clp(totals.cash)}
+            />
+            <Mini
+              icon={<Send className="w-3.5 h-3.5" />}
+              label="Transfer."
+              value={clp(totals.transfer)}
+            />
+            <Mini
+              icon={<CreditCard className="w-3.5 h-3.5" />}
+              label="Tarjeta"
+              value={clp(totals.card)}
+            />
           </div>
         </motion.div>
       </section>
@@ -227,11 +283,7 @@ function CajaPage() {
           tone={totals.profit >= 0 ? "success" : "destructive"}
           sub={`Ventas − comisiones − gastos`}
         />
-        <KpiCard
-          label="Propinas"
-          value={clp(totals.tips)}
-          sub="Separadas de ventas"
-        />
+        <KpiCard label="Propinas" value={clp(totals.tips)} sub="Separadas de ventas" />
       </section>
 
       {/* Conciliación */}
@@ -241,7 +293,8 @@ function CajaPage() {
             <div>
               <p className="text-xs text-muted-foreground">Conciliación</p>
               <p className="mt-1 text-sm font-medium">
-                {clp(totals.reconciled)} <span className="text-muted-foreground">de {clp(totals.sales)}</span>
+                {clp(totals.reconciled)}{" "}
+                <span className="text-muted-foreground">de {clp(totals.sales)}</span>
               </p>
             </div>
             <span className="text-xs font-semibold tabular text-success">
@@ -251,7 +304,9 @@ function CajaPage() {
           <div className="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
             <div
               className="h-full bg-success transition-all"
-              style={{ width: `${totals.sales > 0 ? (totals.reconciled / totals.sales) * 100 : 0}%` }}
+              style={{
+                width: `${totals.sales > 0 ? (totals.reconciled / totals.sales) * 100 : 0}%`,
+              }}
             />
           </div>
         </div>
@@ -284,7 +339,9 @@ function CajaPage() {
               <Wallet className="w-5 h-5 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium">Caja en cero</p>
-            <p className="mt-1 text-xs text-muted-foreground">Los cobros aparecerán aquí en tiempo real.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Los cobros aparecerán aquí en tiempo real.
+            </p>
           </div>
         ) : (
           <ul className="space-y-1.5">
@@ -358,7 +415,11 @@ function KpiCard({
       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
       <p
         className={`mt-1 text-lg font-semibold tabular ${
-          tone === "success" ? "text-success" : tone === "destructive" ? "text-destructive" : "text-foreground"
+          tone === "success"
+            ? "text-success"
+            : tone === "destructive"
+              ? "text-destructive"
+              : "text-foreground"
         }`}
       >
         {value}
@@ -405,9 +466,7 @@ function PaymentItem({
         <button
           onClick={onToggle}
           className={`mt-0.5 text-[10px] font-medium px-2 py-0.5 rounded-full ${
-            p.status === "conciliado"
-              ? "bg-success/15 text-success"
-              : "bg-warning/15 text-warning"
+            p.status === "conciliado" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
           }`}
         >
           {p.status === "conciliado" ? "✓ Conciliado" : "Pendiente"}
@@ -430,10 +489,13 @@ function MovementItem({ m }: { m: CashMovementRow }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{m.concept}</p>
-        <p className="text-[11px] text-muted-foreground">{shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso manual"}</p>
+        <p className="text-[11px] text-muted-foreground">
+          {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso manual"}
+        </p>
       </div>
       <p className={`text-sm font-semibold tabular ${isOut ? "text-destructive" : "text-info"}`}>
-        {isOut ? "−" : "+"}{clp(m.amount)}
+        {isOut ? "−" : "+"}
+        {clp(m.amount)}
       </p>
     </li>
   );
@@ -597,7 +659,10 @@ function NewMovementSheet({
         staff_id: staffId,
         commission_pct: pct,
         commission_amount: commissionAmount,
-        notes: encodePaymentNotes(notes.trim() || `Servicio rápido${selectedStaff ? ` · ${selectedStaff.name}` : ""}`, tipAmount),
+        notes: encodePaymentNotes(
+          notes.trim() || `Servicio rápido${selectedStaff ? ` · ${selectedStaff.name}` : ""}`,
+          tipAmount,
+        ),
       });
       if (paymentError) throw paymentError;
 
@@ -630,7 +695,10 @@ function NewMovementSheet({
         <div className="p-5 pb-4 overflow-y-auto overscroll-contain">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Movimiento de caja</h2>
-            <button onClick={onClose} className="h-8 w-8 rounded-full bg-muted grid place-items-center">
+            <button
+              onClick={onClose}
+              className="h-8 w-8 rounded-full bg-muted grid place-items-center"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -639,7 +707,10 @@ function NewMovementSheet({
             {(["egreso", "ingreso"] as const).map((k) => (
               <button
                 key={k}
-                onClick={() => { setKind(k); if (k === "egreso") setIsService(false); }}
+                onClick={() => {
+                  setKind(k);
+                  if (k === "egreso") setIsService(false);
+                }}
                 className={`h-10 rounded-lg text-sm font-medium ${
                   kind === k ? "bg-foreground text-background" : "text-muted-foreground"
                 }`}
@@ -697,7 +768,9 @@ function NewMovementSheet({
                           type="button"
                           onClick={() => setServiceId(service.id)}
                           className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
-                            service.id === serviceId ? "bg-foreground text-background" : "bg-background"
+                            service.id === serviceId
+                              ? "bg-foreground text-background"
+                              : "bg-background"
                           }`}
                         >
                           {service.name}
@@ -707,7 +780,8 @@ function NewMovementSheet({
                   )}
                   {selectedService && (
                     <p className="mt-2 text-[11px] text-muted-foreground px-1">
-                      Precio guardado: {clp(selectedService.price)}. Este cobro usa {clp(serviceAmount)}.
+                      Precio guardado: {clp(selectedService.price)}. Este cobro usa{" "}
+                      {clp(serviceAmount)}.
                     </p>
                   )}
                 </div>
@@ -740,7 +814,10 @@ function NewMovementSheet({
                   <p className="text-xs text-muted-foreground px-1">Cliente</p>
                   <input
                     value={clientName}
-                    onChange={(e) => { setClientName(e.target.value); setPickedClient(null); }}
+                    onChange={(e) => {
+                      setClientName(e.target.value);
+                      setPickedClient(null);
+                    }}
                     placeholder="Nombre rápido (opcional)"
                     className="mt-2 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
                   />
@@ -750,7 +827,10 @@ function NewMovementSheet({
                         <button
                           key={client.id}
                           type="button"
-                          onClick={() => { setPickedClient(client); setClientName(client.name); }}
+                          onClick={() => {
+                            setPickedClient(client);
+                            setClientName(client.name);
+                          }}
                           className="shrink-0 px-3 h-9 rounded-full bg-muted hairline text-xs active:scale-95 transition-transform"
                         >
                           {client.name}
@@ -765,13 +845,17 @@ function NewMovementSheet({
                     label="Fecha"
                     value={dateInputValue(serviceTime)}
                     type="date"
-                    onChange={(value) => setServiceTime((current) => applyDateInput(current, value))}
+                    onChange={(value) =>
+                      setServiceTime((current) => applyDateInput(current, value))
+                    }
                   />
                   <DateTimeInput
                     label="Hora"
                     value={timeInputValue(serviceTime)}
                     type="time"
-                    onChange={(value) => setServiceTime((current) => applyTimeInput(current, value))}
+                    onChange={(value) =>
+                      setServiceTime((current) => applyTimeInput(current, value))
+                    }
                   />
                 </div>
 
@@ -785,7 +869,9 @@ function NewMovementSheet({
 
                 <div className="rounded-xl bg-background/50 hairline p-3 flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">Total recibido</span>
-                  <span className="text-base font-semibold tabular">{clp(serviceAmount + tipAmount)}</span>
+                  <span className="text-base font-semibold tabular">
+                    {clp(serviceAmount + tipAmount)}
+                  </span>
                 </div>
 
                 <div>
@@ -799,7 +885,9 @@ function NewMovementSheet({
                           type="button"
                           onClick={() => setMethod(item.value)}
                           className={`h-10 rounded-xl hairline flex items-center justify-center gap-2 text-xs font-medium ${
-                            method === item.value ? "bg-foreground text-background" : "bg-background"
+                            method === item.value
+                              ? "bg-foreground text-background"
+                              : "bg-background"
                           }`}
                         >
                           <Icon className="w-3.5 h-3.5" />
@@ -866,7 +954,9 @@ function DateTimeInput({
 }) {
   return (
     <label className="rounded-xl bg-background hairline p-3">
-      <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
       <input
         type={type}
         value={value}

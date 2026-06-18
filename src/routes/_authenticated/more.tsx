@@ -26,10 +26,25 @@ function MoreIndex() {
   const { business } = useBusiness();
 
   const items = [
-    { to: "/more/close", label: "Cierre diario", desc: "Resumen y conteo de caja", icon: ClipboardCheck },
+    {
+      to: "/more/close",
+      label: "Cierre diario",
+      desc: "Resumen y conteo de caja",
+      icon: ClipboardCheck,
+    },
     { to: "/more/commissions", label: "Comisiones", desc: "% por barbero y deudas", icon: Users2 },
-    { to: "/more/export", label: "Exportar contador", desc: "PDF, CSV mensual e IVA", icon: Download },
-    { to: "/more/settings", label: "Ajustes", desc: "Equipo, servicios, horario", icon: SettingsIcon },
+    {
+      to: "/more/export",
+      label: "Exportar contador",
+      desc: "PDF, CSV mensual e IVA",
+      icon: Download,
+    },
+    {
+      to: "/more/settings",
+      label: "Ajustes",
+      desc: "Equipo, servicios, horario",
+      icon: SettingsIcon,
+    },
   ] as const;
 
   return (

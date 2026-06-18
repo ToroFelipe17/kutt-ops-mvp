@@ -7,12 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { useAuth } from "@/lib/auth-context";
 import { clp } from "@/lib/format";
-import {
-  computeDayTotals,
-  dayRange,
-  type CashMovementRow,
-  type PaymentRow,
-} from "@/lib/finance";
+import { computeDayTotals, dayRange, type CashMovementRow, type PaymentRow } from "@/lib/finance";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/close")({
@@ -33,9 +28,12 @@ function ClosePage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("payments")
-        .select("id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at")
+        .select(
+          "id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+        )
         .eq("business_id", business!.id)
-        .gte("created_at", from).lte("created_at", to);
+        .gte("created_at", from)
+        .lte("created_at", to);
       return (data ?? []) as PaymentRow[];
     },
   });
@@ -48,7 +46,8 @@ function ClosePage() {
         .from("appointments")
         .select("id,starts_at,price,status,client_name_snapshot,staff_id")
         .eq("business_id", business!.id)
-        .gte("starts_at", from).lte("starts_at", to)
+        .gte("starts_at", from)
+        .lte("starts_at", to)
         .not("status", "in", "(pagado,completado,cancelado)");
       return data ?? [];
     },
@@ -59,9 +58,11 @@ function ClosePage() {
     enabled: !!business?.id,
     queryFn: async () => {
       const { data } = await supabase
-        .from("cash_movements").select("id,kind,amount,concept,created_at")
+        .from("cash_movements")
+        .select("id,kind,amount,concept,created_at")
         .eq("business_id", business!.id)
-        .gte("created_at", from).lte("created_at", to);
+        .gte("created_at", from)
+        .lte("created_at", to);
       return (data ?? []) as CashMovementRow[];
     },
   });
@@ -71,14 +72,19 @@ function ClosePage() {
     enabled: !!business?.id,
     queryFn: async () => {
       const { data } = await supabase
-        .from("daily_closes").select("*")
-        .eq("business_id", business!.id).eq("close_date", today)
+        .from("daily_closes")
+        .select("*")
+        .eq("business_id", business!.id)
+        .eq("close_date", today)
         .maybeSingle();
       return data;
     },
   });
 
-  const totals = useMemo(() => computeDayTotals(payments, pending, movements), [payments, pending, movements]);
+  const totals = useMemo(
+    () => computeDayTotals(payments, pending, movements),
+    [payments, pending, movements],
+  );
   const countedNum = parseInt(counted.replace(/\D/g, ""), 10) || 0;
   const diff = countedNum > 0 ? countedNum - totals.cashOnHand : 0;
 
@@ -100,7 +106,9 @@ function ClosePage() {
         profit_estimated: totals.profit,
         closed_by: user?.id ?? null,
       };
-      const { error } = await supabase.from("daily_closes").upsert(payload, { onConflict: "business_id,close_date" });
+      const { error } = await supabase
+        .from("daily_closes")
+        .upsert(payload, { onConflict: "business_id,close_date" });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -113,19 +121,32 @@ function ClosePage() {
   return (
     <div className="min-h-screen bg-background pb-28 safe-top">
       <header className="px-5 pt-5 pb-3 flex items-center gap-3">
-        <Link to="/more" className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center">
+        <Link
+          to="/more"
+          className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center"
+        >
           <ChevronLeft className="w-4 h-4" />
         </Link>
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Cierre diario</p>
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
+            Cierre diario
+          </p>
           <h1 className="text-xl font-semibold tracking-tight capitalize">
-            {new Date().toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "short" })}
+            {new Date().toLocaleDateString("es-CL", {
+              weekday: "long",
+              day: "numeric",
+              month: "short",
+            })}
           </h1>
         </div>
       </header>
 
       <section className="px-5">
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl bg-surface-elevated hairline p-5">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl bg-surface-elevated hairline p-5"
+        >
           <p className="text-xs text-muted-foreground">Total ventas</p>
           <p className="mt-1 text-4xl font-semibold tabular tracking-tight">{clp(totals.sales)}</p>
 
@@ -137,7 +158,12 @@ function ClosePage() {
             <Row label="Comisiones" value={`− ${clp(totals.commissions)}`} />
             <Row label="Egresos" value={`− ${clp(totals.expenses)}`} />
             <Row label="IVA estimado" value={clp(totals.ivaEstimated)} />
-            <Row label="Utilidad estimada" value={clp(totals.profit)} bold tone={totals.profit >= 0 ? "success" : "destructive"} />
+            <Row
+              label="Utilidad estimada"
+              value={clp(totals.profit)}
+              bold
+              tone={totals.profit >= 0 ? "success" : "destructive"}
+            />
           </dl>
         </motion.div>
       </section>
@@ -159,8 +185,11 @@ function ClosePage() {
           {countedNum > 0 && (
             <div className="mt-3 flex items-center justify-between">
               <p className="text-xs text-muted-foreground">Diferencia</p>
-              <p className={`text-sm font-semibold tabular ${diff === 0 ? "text-success" : diff > 0 ? "text-info" : "text-destructive"}`}>
-                {diff > 0 ? "+" : ""}{clp(diff)}
+              <p
+                className={`text-sm font-semibold tabular ${diff === 0 ? "text-success" : diff > 0 ? "text-info" : "text-destructive"}`}
+              >
+                {diff > 0 ? "+" : ""}
+                {clp(diff)}
               </p>
             </div>
           )}
@@ -178,7 +207,11 @@ function ClosePage() {
         </button>
         {existing && (
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Cierre guardado a las {new Date(existing.created_at).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}
+            Cierre guardado a las{" "}
+            {new Date(existing.created_at).toLocaleTimeString("es-CL", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
           </p>
         )}
       </section>
@@ -198,13 +231,19 @@ function Row({
   tone?: "success" | "warning" | "destructive";
 }) {
   const c =
-    tone === "success" ? "text-success" :
-    tone === "warning" ? "text-warning" :
-    tone === "destructive" ? "text-destructive" : "text-foreground";
+    tone === "success"
+      ? "text-success"
+      : tone === "warning"
+        ? "text-warning"
+        : tone === "destructive"
+          ? "text-destructive"
+          : "text-foreground";
   return (
     <div className="py-2.5 flex items-center justify-between">
       <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className={`tabular ${bold ? "text-base font-semibold" : "text-sm font-medium"} ${c}`}>{value}</dd>
+      <dd className={`tabular ${bold ? "text-base font-semibold" : "text-sm font-medium"} ${c}`}>
+        {value}
+      </dd>
     </div>
   );
 }

@@ -129,21 +129,15 @@ export function loadBusinessHoursSchedule(
   }
 }
 
-export function saveBusinessHoursSchedule(
-  businessId: string,
-  schedule: BusinessHoursSchedule,
-) {
+export function saveBusinessHoursSchedule(businessId: string, schedule: BusinessHoursSchedule) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(getBusinessHoursStorageKey(businessId), JSON.stringify(schedule));
 }
 
 export function getActiveWeeklySchedule(schedule: BusinessHoursSchedule): BusinessDayHours[] {
   if (schedule.mode === "simple") {
-    return createScheduleFromSimple(
-      schedule.simpleRange,
-      schedule.openHour,
-      schedule.closeHour,
-    ).days;
+    return createScheduleFromSimple(schedule.simpleRange, schedule.openHour, schedule.closeHour)
+      .days;
   }
 
   return schedule.days;

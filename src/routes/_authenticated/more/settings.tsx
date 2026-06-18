@@ -19,7 +19,12 @@ import {
   type WeekdayId,
 } from "@/lib/business-hours";
 import { clp } from "@/lib/format";
-import { getStoredVisualTheme, setStoredVisualTheme, VISUAL_THEMES, type VisualTheme } from "@/lib/visual-theme";
+import {
+  getStoredVisualTheme,
+  setStoredVisualTheme,
+  VISUAL_THEMES,
+  type VisualTheme,
+} from "@/lib/visual-theme";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/settings")({
@@ -122,9 +127,10 @@ function SettingsPage() {
       return;
     }
 
-    const next = schedule.mode === "simple"
-      ? createScheduleFromSimple(schedule.simpleRange, schedule.openHour, schedule.closeHour)
-      : schedule;
+    const next =
+      schedule.mode === "simple"
+        ? createScheduleFromSimple(schedule.simpleRange, schedule.openHour, schedule.closeHour)
+        : schedule;
     setSchedule(next);
     saveBusinessHoursSchedule(business.id, next);
     await refresh();
@@ -249,14 +255,18 @@ function SettingsPage() {
       return;
     }
 
-    setSchedule(createScheduleFromSimple(schedule.simpleRange, schedule.openHour, schedule.closeHour));
+    setSchedule(
+      createScheduleFromSimple(schedule.simpleRange, schedule.openHour, schedule.closeHour),
+    );
   };
 
   const updateSimpleRange = (simpleRange: SimpleScheduleRange) => {
     setSchedule(createScheduleFromSimple(simpleRange, schedule.openHour, schedule.closeHour));
   };
 
-  const updateSimpleHour = (patch: Partial<Pick<BusinessHoursSchedule, "openHour" | "closeHour">>) => {
+  const updateSimpleHour = (
+    patch: Partial<Pick<BusinessHoursSchedule, "openHour" | "closeHour">>,
+  ) => {
     const openHour = patch.openHour ?? schedule.openHour;
     const closeHour = patch.closeHour ?? schedule.closeHour;
     setSchedule(createScheduleFromSimple(schedule.simpleRange, openHour, closeHour));
@@ -281,12 +291,17 @@ function SettingsPage() {
   return (
     <div className="min-h-screen bg-background pb-28 safe-top">
       <header className="px-5 pt-5 pb-3 flex items-center gap-3">
-        <Link to="/more" className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center">
+        <Link
+          to="/more"
+          className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center"
+        >
           <ChevronLeft className="w-4 h-4" />
         </Link>
         <div>
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Ajustes</p>
-          <h1 className="text-xl font-semibold tracking-tight">{business?.name ?? "Tu barbería"}</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            {business?.name ?? "Tu barbería"}
+          </h1>
         </div>
       </header>
 
@@ -344,9 +359,7 @@ function SettingsPage() {
                 type="button"
                 onClick={() => setHoursMode(mode)}
                 className={`h-10 rounded-xl text-sm font-medium transition-colors ${
-                  schedule.mode === mode
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground"
+                  schedule.mode === mode ? "bg-foreground text-background" : "text-muted-foreground"
                 }`}
               >
                 {mode === "simple" ? "Horario simple" : "Personalizar días"}
@@ -357,7 +370,9 @@ function SettingsPage() {
           {schedule.mode === "simple" ? (
             <div className="mt-4 space-y-3">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Aplicar horario a</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Aplicar horario a
+                </p>
                 <div className="mt-2 grid gap-2">
                   {SIMPLE_SCHEDULE_RANGES.map((range) => (
                     <button
@@ -371,7 +386,9 @@ function SettingsPage() {
                       }`}
                     >
                       <span>{range.label}</span>
-                      {schedule.simpleRange === range.value && <Check className="w-4 h-4 text-success" />}
+                      {schedule.simpleRange === range.value && (
+                        <Check className="w-4 h-4 text-success" />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -418,7 +435,9 @@ function SettingsPage() {
               className="h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
             />
             <label className="h-12 px-3 rounded-xl bg-background hairline flex flex-col justify-center">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Comisión</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Comisión
+              </span>
               <input
                 inputMode="decimal"
                 value={newStaffCommission}
@@ -445,7 +464,10 @@ function SettingsPage() {
               </p>
             ) : (
               staff.map((member) => (
-                <div key={member.id} className="rounded-xl bg-background/40 hairline p-3 flex items-center justify-between gap-3">
+                <div
+                  key={member.id}
+                  className="rounded-xl bg-background/40 hairline p-3 flex items-center justify-between gap-3"
+                >
                   <div className="min-w-0 flex items-center gap-3">
                     <span
                       className="h-8 w-8 rounded-full shrink-0"
@@ -463,7 +485,9 @@ function SettingsPage() {
                     onClick={() => toggleStaff(member)}
                     disabled={updatingStaffId === member.id}
                     className={`h-8 px-3 rounded-full text-xs font-medium active:scale-[0.98] transition-transform disabled:opacity-50 ${
-                      member.active ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                      member.active
+                        ? "bg-success/15 text-success"
+                        : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {member.active ? "Activo" : "Inactivo"}
@@ -494,7 +518,9 @@ function SettingsPage() {
               className="h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
             />
             <label className="h-12 px-3 rounded-xl bg-background hairline flex flex-col justify-center">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Min</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Min
+              </span>
               <input
                 inputMode="numeric"
                 value={newServiceDuration}
@@ -521,7 +547,10 @@ function SettingsPage() {
               </p>
             ) : (
               services.map((service) => (
-                <div key={service.id} className="rounded-xl bg-background/40 hairline p-3 flex items-center justify-between gap-3">
+                <div
+                  key={service.id}
+                  className="rounded-xl bg-background/40 hairline p-3 flex items-center justify-between gap-3"
+                >
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{service.name}</p>
                     <p className="text-[11px] text-muted-foreground">
@@ -533,7 +562,9 @@ function SettingsPage() {
                     onClick={() => toggleService(service)}
                     disabled={updatingServiceId === service.id}
                     className={`h-8 px-3 rounded-full text-xs font-medium active:scale-[0.98] transition-transform disabled:opacity-50 ${
-                      service.active ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                      service.active
+                        ? "bg-success/15 text-success"
+                        : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {service.active ? "Activo" : "Inactivo"}
@@ -593,9 +624,7 @@ function DayHoursRow({
           type="button"
           onClick={() => onChange(day.day, { isOpen: !day.isOpen })}
           className={`h-8 px-3 rounded-full text-xs font-medium active:scale-[0.98] transition-transform ${
-            day.isOpen
-              ? "bg-success/15 text-success"
-              : "bg-muted text-muted-foreground"
+            day.isOpen ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
           }`}
         >
           {day.isOpen ? "Abierto" : "Cerrado"}
@@ -633,7 +662,9 @@ function WeeklyPreview({ days }: { days: BusinessDayHours[] }) {
           <div key={day.day} className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">{day.label}</span>
             <span className="font-medium tabular">
-              {day.isOpen ? `${formatHour(day.openHour)} - ${formatHour(day.closeHour)}` : "Cerrado"}
+              {day.isOpen
+                ? `${formatHour(day.openHour)} - ${formatHour(day.closeHour)}`
+                : "Cerrado"}
             </span>
           </div>
         ))}
