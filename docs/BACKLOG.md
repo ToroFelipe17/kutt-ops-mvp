@@ -2,30 +2,68 @@
 
 Este backlog registra pendientes detectados durante pruebas y profesionalizacion del MVP.
 
-## Producto y UX
+## Completado recientemente
+
+- Backend migrado a un proyecto Supabase propio.
+- Migraciones remotas aplicadas correctamente con Supabase CLI.
+- Error `permission denied for function user_owns_business` resuelto mediante `20260611090000_grant_user_owns_business_execute.sql`.
+- Migracion `20260618165155_grant_authenticated_app_table_access.sql` aplicada.
+- RLS y policies conservadas sin debilitar seguridad.
+- Variables locales conectadas al Supabase propio.
+- Flujo minimo probado: registro/login, onboarding, negocio, equipo, servicios y caja basica.
+- KUTT Engineering Foundation creada en `docs/`.
+- Refactor ESLint completado en el commit `986d079`.
+
+## Auth y acceso
 
 - Mostrar/ocultar contrasena en login y registro.
 - Mejorar registro con nombre/apellido o nombre completo.
-- Corregir redirect de confirmacion de correo.
+- Ajustar redirect de confirmacion de correo para produccion y red local.
+
+## Fase 2A: Accounting date model
+
+- Agregar `accounting_date` a pagos y movimientos de caja mediante una migracion versionada.
+- Definir una estrategia segura de backfill para registros existentes.
+- Guardar la fecha contable seleccionada en ingresos historicos.
+- Agrupar Caja y cierre diario por `accounting_date`, no por `created_at`.
+- Resolver explicitamente la zona horaria del negocio.
+
+## Fase 2B: Tip amount migration
+
+- Agregar `payments.tip_amount` con valor inicial cero y validacion no negativa.
+- Migrar propinas existentes desde el marcador temporal `KUTT_TIP_AMOUNT`.
+- Mantener ventas y propinas separadas en calculos y reportes.
+- Eliminar el marcador temporal cuando `tip_amount` sea la fuente oficial.
+
+## Fase 2C: Daily close enforcement
+
+- Hacer que el cierre diario cierre una `accounting_date` especifica.
+- Impedir pagos y movimientos normales sobre fechas cerradas.
+- Definir un flujo de ajuste o reapertura explicito y auditable.
+- Guardar en el cierre los totales necesarios, incluidas propinas e ingresos manuales.
+
+## Fase 2D: Service price autocomplete
+
+- Autocompletar el monto desde el precio del servicio seleccionado.
+- Permitir una modificacion manual explicita cuando el precio real sea distinto.
+
+## Fase 2E: Export and commissions alignment
+
+- Agrupar exportaciones y comisiones por `accounting_date`.
+- Evitar combinaciones de fecha UTC con hora local.
+- Mantener comisiones entre 0 y 100 y mejorar su UX tactil.
+- Mantener las propinas fuera de la base de comision salvo decision futura explicita.
+
+## Agenda y clientes
+
+- Agenda debe leer el horario real configurado para el negocio.
+- Clientes debe convertirse en un modulo real con busqueda, edicion e historial operacional.
+
+## UI y navegacion
+
 - Mejorar navegacion movil tipo bottom navigation.
 - Evaluar navegacion por swipe.
 - Disenar futura interfaz KUTT Liquid UI inspirada en glassmorphism/iOS, sin sacrificar legibilidad.
-
-## Caja y operaciones
-
-- Ingreso por servicio debe autocompletar precio.
-- Ingresos de dias anteriores deben pertenecer a la fecha seleccionada.
-- Cierre diario debe cerrar una fecha especifica.
-- Dias cerrados deben bloquear modificaciones normales.
-- Comisiones deben aceptar valores entre 0 y 100.
-- Reemplazar o mejorar slider de comisiones para movil.
-
-## Supabase y seguridad
-
-- Confirmar en el proyecto remoto que la migracion `20260611090000_grant_user_owns_business_execute.sql` fue aplicada.
-- Mantener RLS activo en tablas operacionales.
-- No usar `service_role` en frontend.
-- Revisar periodicamente que no se versionen secretos ni `supabase/.temp`.
 
 ## Limpieza Lovable pendiente
 

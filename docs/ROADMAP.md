@@ -2,30 +2,36 @@
 
 KUTT debe avanzar en fases pequenas, revisables y con foco operacional.
 
+Fase activa: **Fase 2 - Stable Cash Module (Caja estable)**.
+
 ## Fase 0: Migracion backend propio
 
 Estado: completada.
 
-- Migrar desde Lovable Cloud a un proyecto Supabase administrado por el equipo.
-- Mantener migraciones versionadas en `supabase/migrations`.
-- Mantener RLS activo.
-- Evitar dependencia operativa del backend generado en Lovable.
+- Backend oficial migrado desde Lovable Cloud a Supabase propio.
+- Migraciones versionadas y aplicadas mediante Supabase CLI.
+- RLS y policies mantenidas activas.
+- Permisos de `user_owns_business` y tablas de aplicacion corregidos sin debilitar seguridad.
+- Flujos minimos de auth, onboarding, negocio, equipo, servicios y caja verificados.
 
 ## Fase 1: Engineering Foundation
 
-Estado: en curso.
+Estado: completada.
 
-- Documentar arquitectura, reglas de caja, Supabase, UI y decisiones.
-- Mejorar README principal.
-- Registrar deuda tecnica y pendientes de producto.
-- Dejar el repositorio entendible para futuros cambios.
+- Arquitectura, reglas de caja, Supabase, UI y decisiones documentadas.
+- README principal actualizado en espanol.
+- Backlog y roadmap iniciales creados.
+- Refactor ESLint completado en un commit separado.
 
-## Fase 2: Caja estable
+## Fase 2: Stable Cash Module
 
-- Asegurar que todo ingreso pertenezca a una fecha.
-- Corregir ingresos historicos y cierre diario por fecha especifica.
-- Bloquear modificaciones normales en dias cerrados.
-- Mantener ventas, propinas, egresos y comisiones separados.
+Estado: activa.
+
+- Fase 2A: introducir el modelo `accounting_date`.
+- Fase 2B: migrar propinas a `payments.tip_amount`.
+- Fase 2C: implementar cierre diario y bloqueo de fechas cerradas.
+- Fase 2D: autocompletar el precio del servicio en el ingreso rapido.
+- Fase 2E: alinear exportaciones y comisiones con la fecha contable.
 
 ## Fase 3: Comisiones
 

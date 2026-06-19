@@ -1,7 +1,7 @@
 -- Allow authenticated app users to access KUTT tables through Supabase Data API.
 -- RLS remains enabled and continues enforcing row-level access.
 
-GRANT USAGE ON SCHEMA public TO authenticated;npx supabase migration list
+GRANT USAGE ON SCHEMA public TO authenticated;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.profiles,
