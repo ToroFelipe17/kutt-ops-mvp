@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { clp } from "@/lib/format";
-import { monthRange } from "@/lib/finance";
+import { accountingMonthRange } from "@/lib/finance";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/commissions")({
@@ -28,7 +28,7 @@ interface PayRow {
 function CommissionsPage() {
   const { business } = useBusiness();
   const qc = useQueryClient();
-  const [from, to] = monthRange();
+  const [from, to] = accountingMonthRange();
 
   const { data: staff = [] } = useQuery({
     queryKey: ["com-staff", business?.id],
@@ -51,8 +51,8 @@ function CommissionsPage() {
         .from("payments")
         .select("staff_id,commission_amount,amount,status")
         .eq("business_id", business!.id)
-        .gte("created_at", from)
-        .lte("created_at", to);
+        .gte("accounting_date", from)
+        .lte("accounting_date", to);
       return (data ?? []) as PayRow[];
     },
   });

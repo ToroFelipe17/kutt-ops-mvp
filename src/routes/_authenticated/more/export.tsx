@@ -6,9 +6,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { clp } from "@/lib/format";
 import {
+  accountingMonthRange,
   getPaymentDisplayNotes,
   getPaymentTipAmount,
-  monthRange,
   methodLabel,
   type PaymentRow,
 } from "@/lib/finance";
@@ -28,7 +28,7 @@ function ExportPage() {
   const [offset, setOffset] = useState(0);
   const ref = new Date();
   ref.setMonth(ref.getMonth() - offset);
-  const [from, to] = monthRange(ref);
+  const [from, to] = accountingMonthRange(ref);
   const monthLabel = ref.toLocaleDateString("es-CL", { month: "long", year: "numeric" });
 
   const { data: payments = [] } = useQuery({
@@ -38,11 +38,12 @@ function ExportPage() {
       const { data } = await supabase
         .from("payments")
         .select(
-          "id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+          "id,accounting_date,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
         )
         .eq("business_id", business!.id)
-        .gte("created_at", from)
-        .lte("created_at", to)
+        .gte("accounting_date", from)
+        .lte("accounting_date", to)
+        .order("accounting_date")
         .order("created_at");
       return (data ?? []) as PaymentRow[];
     },
@@ -92,7 +93,7 @@ function ExportPage() {
         const d = new Date(p.created_at);
         const tip = getPaymentTipAmount(p);
         return [
-          d.toISOString().slice(0, 10),
+          p.accounting_date,
           d.toTimeString().slice(0, 5),
           methodLabel(p.method),
           p.status,
@@ -159,7 +160,7 @@ function ExportPage() {
     .map((p) => {
       const d = new Date(p.created_at);
       const tip = getPaymentTipAmount(p);
-      return `<tr><td>${d.toLocaleDateString("es-CL")} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(p.amount + tip)}</td></tr>`;
+      return `<tr><td>${formatAccountingDate(p.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(p.amount + tip)}</td></tr>`;
     })
     .join("")}
 </table>
@@ -237,4 +238,9 @@ function Card({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-lg font-semibold tabular">{value}</p>
     </div>
   );
+}
+
+function formatAccountingDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}-${month}-${year}`;
 }

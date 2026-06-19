@@ -6,7 +6,7 @@ import { motion } from "motion/react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { useAuth } from "@/lib/auth-context";
-import { clp } from "@/lib/format";
+import { clp, localDateKey } from "@/lib/format";
 import { computeDayTotals, dayRange, type CashMovementRow, type PaymentRow } from "@/lib/finance";
 import { toast } from "sonner";
 
@@ -19,21 +19,20 @@ function ClosePage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [from, to] = dayRange();
-  const today = new Date().toISOString().slice(0, 10);
+  const accountingDate = localDateKey();
   const [counted, setCounted] = useState("");
 
   const { data: payments = [] } = useQuery({
-    queryKey: ["close-payments", business?.id, from],
+    queryKey: ["close-payments", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data } = await supabase
         .from("payments")
         .select(
-          "id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+          "id,accounting_date,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
         )
         .eq("business_id", business!.id)
-        .gte("created_at", from)
-        .lte("created_at", to);
+        .eq("accounting_date", accountingDate);
       return (data ?? []) as PaymentRow[];
     },
   });
@@ -54,28 +53,27 @@ function ClosePage() {
   });
 
   const { data: movements = [] } = useQuery({
-    queryKey: ["close-mov", business?.id, from],
+    queryKey: ["close-mov", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data } = await supabase
         .from("cash_movements")
-        .select("id,kind,amount,concept,created_at")
+        .select("id,accounting_date,kind,amount,concept,created_at")
         .eq("business_id", business!.id)
-        .gte("created_at", from)
-        .lte("created_at", to);
+        .eq("accounting_date", accountingDate);
       return (data ?? []) as CashMovementRow[];
     },
   });
 
   const { data: existing } = useQuery({
-    queryKey: ["close-existing", business?.id, today],
+    queryKey: ["close-existing", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data } = await supabase
         .from("daily_closes")
         .select("*")
         .eq("business_id", business!.id)
-        .eq("close_date", today)
+        .eq("close_date", accountingDate)
         .maybeSingle();
       return data;
     },
@@ -92,7 +90,7 @@ function ClosePage() {
     mutationFn: async () => {
       const payload = {
         business_id: business!.id,
-        close_date: today,
+        close_date: accountingDate,
         total_sales: totals.sales,
         total_cash: totals.cash,
         total_transfer: totals.transfer,
@@ -113,7 +111,7 @@ function ClosePage() {
     },
     onSuccess: () => {
       toast.success("Día cerrado");
-      qc.invalidateQueries({ queryKey: ["close-existing", business?.id, today] });
+      qc.invalidateQueries({ queryKey: ["close-existing", business?.id, accountingDate] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });

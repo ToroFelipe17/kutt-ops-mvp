@@ -132,6 +132,7 @@ export type Database = {
       };
       cash_movements: {
         Row: {
+          accounting_date: string;
           amount: number;
           business_id: string;
           concept: string;
@@ -140,6 +141,7 @@ export type Database = {
           kind: string;
         };
         Insert: {
+          accounting_date?: string;
           amount: number;
           business_id: string;
           concept: string;
@@ -148,6 +150,7 @@ export type Database = {
           kind: string;
         };
         Update: {
+          accounting_date?: string;
           amount?: number;
           business_id?: string;
           concept?: string;
@@ -295,6 +298,7 @@ export type Database = {
       };
       payments: {
         Row: {
+          accounting_date: string;
           amount: number;
           appointment_id: string | null;
           business_id: string;
@@ -308,6 +312,7 @@ export type Database = {
           status: Database["public"]["Enums"]["payment_status"];
         };
         Insert: {
+          accounting_date?: string;
           amount: number;
           appointment_id?: string | null;
           business_id: string;
@@ -321,6 +326,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["payment_status"];
         };
         Update: {
+          accounting_date?: string;
           amount?: number;
           appointment_id?: string | null;
           business_id?: string;

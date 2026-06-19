@@ -18,7 +18,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { BottomNav } from "@/components/BottomNav";
 import { StatusBadge, type AppointmentStatus } from "@/components/StatusBadge";
-import { clp, endOfDay, shortTime, startOfDay, whatsappLink } from "@/lib/format";
+import {
+  clp,
+  endOfDay,
+  localDateKey,
+  shortTime,
+  startOfDay,
+  whatsappLink,
+} from "@/lib/format";
 import {
   encodePaymentNotes,
   getPaymentTipAmount,
@@ -48,6 +55,7 @@ interface AppointmentRow {
 function Today() {
   const { business } = useBusiness();
   const qc = useQueryClient();
+  const accountingDate = localDateKey();
   const [paymentTarget, setPaymentTarget] = useState<AppointmentRow | null>(null);
 
   const { data: appts = [], isLoading } = useQuery({
@@ -69,15 +77,14 @@ function Today() {
   });
 
   const { data: payments = [] } = useQuery({
-    queryKey: ["today-payments", business?.id],
+    queryKey: ["today-payments", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payments")
         .select("amount,method,notes")
         .eq("business_id", business!.id)
-        .gte("created_at", startOfDay().toISOString())
-        .lte("created_at", endOfDay().toISOString());
+        .eq("accounting_date", accountingDate);
       if (error) throw error;
       return data;
     },
@@ -109,14 +116,14 @@ function Today() {
           filter: `business_id=eq.${business.id}`,
         },
         () => {
-          qc.invalidateQueries({ queryKey: ["today-payments", business.id] });
+          qc.invalidateQueries({ queryKey: ["today-payments", business.id, accountingDate] });
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [business?.id, qc]);
+  }, [accountingDate, business?.id, qc]);
 
   const totals = useMemo(() => {
     const revenue = payments.reduce((s, p) => s + (p.amount ?? 0), 0);
@@ -166,6 +173,7 @@ function Today() {
       const { error: e1 } = await supabase.from("payments").insert({
         business_id: business!.id,
         appointment_id: a.id,
+        accounting_date: localDateKey(new Date(a.starts_at)),
         method,
         amount: a.price,
         status: "conciliado",
@@ -185,7 +193,7 @@ function Today() {
       toast.success("Pago registrado");
       setPaymentTarget(null);
       qc.invalidateQueries({ queryKey: ["today", business?.id] });
-      qc.invalidateQueries({ queryKey: ["today-payments", business?.id] });
+      qc.invalidateQueries({ queryKey: ["today-payments", business?.id, accountingDate] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });

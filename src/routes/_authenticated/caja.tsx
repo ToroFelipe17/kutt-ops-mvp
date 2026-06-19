@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { BottomNav } from "@/components/BottomNav";
-import { clp, shortTime } from "@/lib/format";
+import { clp, localDateKey, shortTime } from "@/lib/format";
 import {
   computeDayTotals,
   dayRange,
@@ -57,19 +57,19 @@ function CajaPage() {
   const { business } = useBusiness();
   const qc = useQueryClient();
   const [from, to] = dayRange();
+  const accountingDate = localDateKey();
 
   const { data: payments = [] } = useQuery({
-    queryKey: ["caja-payments", business?.id, from],
+    queryKey: ["caja-payments", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payments")
         .select(
-          "id,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+          "id,accounting_date,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
         )
         .eq("business_id", business!.id)
-        .gte("created_at", from)
-        .lte("created_at", to)
+        .eq("accounting_date", accountingDate)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as PaymentRow[];
@@ -93,15 +93,14 @@ function CajaPage() {
   });
 
   const { data: movements = [] } = useQuery({
-    queryKey: ["caja-mov", business?.id, from],
+    queryKey: ["caja-mov", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cash_movements")
-        .select("id,kind,amount,concept,created_at")
+        .select("id,accounting_date,kind,amount,concept,created_at")
         .eq("business_id", business!.id)
-        .gte("created_at", from)
-        .lte("created_at", to)
+        .eq("accounting_date", accountingDate)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as CashMovementRow[];
@@ -164,7 +163,7 @@ function CajaPage() {
           filter: `business_id=eq.${business.id}`,
         },
         () => {
-          qc.invalidateQueries({ queryKey: ["caja-payments", business.id, from] });
+          qc.invalidateQueries({ queryKey: ["caja-payments", business.id, accountingDate] });
         },
       )
       .on(
@@ -176,7 +175,7 @@ function CajaPage() {
           filter: `business_id=eq.${business.id}`,
         },
         () => {
-          qc.invalidateQueries({ queryKey: ["caja-mov", business.id, from] });
+          qc.invalidateQueries({ queryKey: ["caja-mov", business.id, accountingDate] });
         },
       )
       .on(
@@ -195,7 +194,7 @@ function CajaPage() {
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [business?.id, from, qc]);
+  }, [accountingDate, business?.id, from, qc]);
 
   const totals = useMemo(
     () => computeDayTotals(payments, pending, movements),
@@ -211,7 +210,8 @@ function CajaPage() {
       const { error } = await supabase.from("payments").update({ status }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, from] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, accountingDate] }),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
@@ -374,8 +374,10 @@ function CajaPage() {
             recentClients={recentClients}
             onClose={() => setMovOpen(false)}
             onDone={() => {
-              qc.invalidateQueries({ queryKey: ["caja-mov", business?.id, from] });
-              qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, from] });
+              qc.invalidateQueries({ queryKey: ["caja-mov", business?.id, accountingDate] });
+              qc.invalidateQueries({
+                queryKey: ["caja-payments", business?.id, accountingDate],
+              });
               qc.invalidateQueries({ queryKey: ["caja-pending", business?.id, from] });
             }}
           />
@@ -527,6 +529,7 @@ function NewMovementSheet({
   const [method, setMethod] = useState<PaymentMethod>("efectivo");
   const [tip, setTip] = useState("");
   const [serviceTime, setServiceTime] = useState(() => currentMinute());
+  const [accountingDate, setAccountingDate] = useState(() => localDateKey());
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -534,7 +537,9 @@ function NewMovementSheet({
   const serviceAmount = parseCurrencyInput(amount);
   const tipAmount = parseCurrencyInput(tip);
   const hasValidAmount = serviceAmount > 0;
-  const submitDisabled = saving || !hasValidAmount || (!isService && !concept.trim());
+  const hasValidAccountingDate = /^\d{4}-\d{2}-\d{2}$/.test(accountingDate);
+  const submitDisabled =
+    saving || !hasValidAmount || !hasValidAccountingDate || (!isService && !concept.trim());
   const filteredClients = useMemo(() => {
     if (!clientName.trim()) return recentClients.slice(0, 5);
     const query = clientName.toLowerCase();
@@ -549,6 +554,11 @@ function NewMovementSheet({
     if (!staffId && staff[0]) setStaffId(staff[0].id);
   }, [staff, staffId]);
 
+  const updateAccountingDate = (value: string) => {
+    setAccountingDate(value);
+    setServiceTime((current) => applyDateInput(current, value));
+  };
+
   const submit = async () => {
     const n = parseCurrencyInput(amount);
     if (isService) {
@@ -560,12 +570,17 @@ function NewMovementSheet({
       toast.error("Falta monto o concepto");
       return;
     }
+    if (!hasValidAccountingDate) {
+      toast.error("Selecciona una fecha contable válida");
+      return;
+    }
     setSaving(true);
     const { error } = await supabase.from("cash_movements").insert({
       business_id: businessId,
       kind,
       amount: n,
       concept: concept.trim(),
+      accounting_date: accountingDate,
     });
     setSaving(false);
     if (error) {
@@ -584,6 +599,10 @@ function NewMovementSheet({
     }
     if (!staffId) {
       toast.error("Selecciona barbero");
+      return;
+    }
+    if (!hasValidAccountingDate) {
+      toast.error("Selecciona una fecha contable válida");
       return;
     }
     setSaving(true);
@@ -653,6 +672,7 @@ function NewMovementSheet({
       const { error: paymentError } = await supabase.from("payments").insert({
         business_id: businessId,
         appointment_id: appointment.id,
+        accounting_date: accountingDate,
         method,
         amount: serviceAmount,
         status: "conciliado",
@@ -842,12 +862,10 @@ function NewMovementSheet({
 
                 <div className="grid grid-cols-2 gap-2">
                   <DateTimeInput
-                    label="Fecha"
-                    value={dateInputValue(serviceTime)}
+                    label="Fecha contable"
+                    value={accountingDate}
                     type="date"
-                    onChange={(value) =>
-                      setServiceTime((current) => applyDateInput(current, value))
-                    }
+                    onChange={updateAccountingDate}
                   />
                   <DateTimeInput
                     label="Hora"
@@ -911,12 +929,20 @@ function NewMovementSheet({
               </div>
             )
           ) : (
-            <input
-              placeholder="Concepto (ej: arriendo, productos...)"
-              value={concept}
-              onChange={(e) => setConcept(e.target.value)}
-              className="mt-4 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
-            />
+            <div className="mt-4 space-y-3">
+              <DateTimeInput
+                label="Fecha contable"
+                value={accountingDate}
+                type="date"
+                onChange={updateAccountingDate}
+              />
+              <input
+                placeholder="Concepto (ej: arriendo, productos...)"
+                value={concept}
+                onChange={(e) => setConcept(e.target.value)}
+                className="w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+              />
+            </div>
           )}
         </div>
 
@@ -975,13 +1001,6 @@ function currentMinute(): Date {
   const now = new Date();
   now.setSeconds(0, 0);
   return now;
-}
-
-function dateInputValue(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 function timeInputValue(date: Date): string {

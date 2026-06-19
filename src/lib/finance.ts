@@ -1,10 +1,11 @@
-import { startOfDay, endOfDay } from "./format";
+import { startOfDay, endOfDay, localDateKey } from "./format";
 
 export type PaymentMethod = "efectivo" | "transferencia" | "debito" | "credito";
 export type PaymentStatus = "pendiente" | "conciliado" | "parcial";
 
 export interface PaymentRow {
   id: string;
+  accounting_date: string;
   amount: number;
   method: PaymentMethod;
   status: PaymentStatus;
@@ -27,6 +28,7 @@ export interface AppointmentLite {
 
 export interface CashMovementRow {
   id: string;
+  accounting_date: string;
   kind: "ingreso" | "egreso";
   amount: number;
   concept: string;
@@ -124,10 +126,10 @@ export function dayRange(d = new Date()): [string, string] {
   return [startOfDay(d).toISOString(), endOfDay(d).toISOString()];
 }
 
-export function monthRange(d = new Date()): [string, string] {
+export function accountingMonthRange(d = new Date()): [string, string] {
   const start = new Date(d.getFullYear(), d.getMonth(), 1);
-  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-  return [start.toISOString(), end.toISOString()];
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return [localDateKey(start), localDateKey(end)];
 }
 
 export function methodLabel(m: PaymentMethod): string {
