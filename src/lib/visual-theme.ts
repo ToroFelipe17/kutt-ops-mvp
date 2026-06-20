@@ -3,6 +3,11 @@ export type VisualTheme = "dark" | "light";
 export const THEME_STORAGE_KEY = "kutt-theme-mode";
 export const THEME_CHANGE_EVENT = "kutt-theme-change";
 
+const THEME_COLORS: Record<VisualTheme, string> = {
+  dark: "#171719",
+  light: "#f8f8f7",
+};
+
 export const VISUAL_THEMES: Array<{
   value: VisualTheme;
   label: string;
@@ -29,17 +34,36 @@ export function normalizeVisualTheme(value: string | null): VisualTheme {
 
 export function getStoredVisualTheme(): VisualTheme {
   if (typeof window === "undefined") return "dark";
-  return normalizeVisualTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const theme = normalizeVisualTheme(storedTheme);
+    if (storedTheme !== theme) window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    return theme;
+  } catch {
+    return "dark";
+  }
 }
 
 export function applyVisualTheme(theme: VisualTheme) {
   if (typeof document === "undefined") return;
-  document.documentElement.dataset.theme = theme;
+  const normalizedTheme = normalizeVisualTheme(theme);
+  const root = document.documentElement;
+  root.dataset.theme = normalizedTheme;
+  root.classList.toggle("dark", normalizedTheme === "dark");
+  root.style.colorScheme = normalizedTheme;
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", THEME_COLORS[normalizedTheme]);
 }
 
 export function setStoredVisualTheme(theme: VisualTheme) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  applyVisualTheme(theme);
-  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: theme }));
+  const normalizedTheme = normalizeVisualTheme(theme);
+  applyVisualTheme(normalizedTheme);
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+  } catch {
+    // The selected theme still applies for this session when storage is unavailable.
+  }
+  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: normalizedTheme }));
 }

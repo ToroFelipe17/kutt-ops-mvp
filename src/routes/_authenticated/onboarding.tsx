@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { ArrowRight, Check } from "lucide-react";
@@ -27,14 +27,14 @@ const DEFAULT_SERVICES = [
 
 function Onboarding() {
   const { user } = useAuth();
-  const { refresh } = useBusiness();
+  const { business, refresh } = useBusiness();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => business?.name ?? "");
   const [visualTheme, setVisualTheme] = useState<VisualTheme>(() => getStoredVisualTheme());
   const [barber, setBarber] = useState("");
-  const [open, setOpen] = useState(10);
-  const [close, setClose] = useState(21);
+  const [open, setOpen] = useState(() => business?.open_hour ?? 10);
+  const [close, setClose] = useState(() => business?.close_hour ?? 21);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -54,32 +54,94 @@ function Onboarding() {
     if (busy) return;
     setBusy(true);
     try {
-      const { data: biz, error } = await supabase
+      const { data: existingBusiness, error: lookupError } = await supabase
         .from("businesses")
-        .insert({
-          owner_id: user.id,
-          name: name.trim(),
-          primary_color: LEGACY_PRIMARY_COLOR,
-          open_hour: open,
-          close_hour: close,
-          onboarded: true,
-        })
-        .select()
-        .single();
-      if (error) throw error;
+        .select("id,onboarded")
+        .eq("owner_id", user.id)
+        .order("onboarded", { ascending: false })
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
 
-      // First barber + default services
-      await Promise.all([
-        supabase.from("staff").insert({
-          business_id: biz.id,
+      if (existingBusiness?.onboarded) {
+        await refresh();
+        navigate({ to: "/today" });
+        return;
+      }
+
+      let businessId = existingBusiness?.id;
+      if (businessId) {
+        const { error: updateError } = await supabase
+          .from("businesses")
+          .update({
+            name: name.trim(),
+            open_hour: open,
+            close_hour: close,
+          })
+          .eq("id", businessId);
+        if (updateError) throw updateError;
+      } else {
+        const { data: newBusiness, error: insertError } = await supabase
+          .from("businesses")
+          .insert({
+            owner_id: user.id,
+            name: name.trim(),
+            primary_color: LEGACY_PRIMARY_COLOR,
+            open_hour: open,
+            close_hour: close,
+            onboarded: false,
+          })
+          .select("id")
+          .single();
+        if (insertError) throw insertError;
+        businessId = newBusiness.id;
+      }
+
+      if (!businessId) throw new Error("No se pudo preparar el negocio.");
+
+      const { data: existingStaff, error: staffLookupError } = await supabase
+        .from("staff")
+        .select("id")
+        .eq("business_id", businessId)
+        .limit(1);
+      if (staffLookupError) throw staffLookupError;
+      if (!existingStaff?.length) {
+        const { error: staffInsertError } = await supabase.from("staff").insert({
+          business_id: businessId,
           name: barber.trim() || "Barbero 1",
           color: LEGACY_PRIMARY_COLOR,
-        }),
-        supabase
-          .from("services")
-          .insert(DEFAULT_SERVICES.map((s) => ({ ...s, business_id: biz.id }))),
-        supabase.from("profiles").update({ default_business_id: biz.id }).eq("id", user.id),
-      ]);
+        });
+        if (staffInsertError) throw staffInsertError;
+      }
+
+      const { data: existingServices, error: servicesLookupError } = await supabase
+        .from("services")
+        .select("id")
+        .eq("business_id", businessId)
+        .limit(1);
+      if (servicesLookupError) throw servicesLookupError;
+      if (!existingServices?.length) {
+        const { error: servicesInsertError } = await supabase.from("services").insert(
+          DEFAULT_SERVICES.map((service) => ({
+            ...service,
+            business_id: businessId,
+          })),
+        );
+        if (servicesInsertError) throw servicesInsertError;
+      }
+
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ default_business_id: businessId })
+        .eq("id", user.id);
+      if (profileError) throw profileError;
+
+      const { error: completionError } = await supabase
+        .from("businesses")
+        .update({ onboarded: true })
+        .eq("id", businessId);
+      if (completionError) throw completionError;
 
       await refresh();
       toast.success("Listo. Bienvenido.");
@@ -96,6 +158,8 @@ function Onboarding() {
     step === 1 ||
     (step === 2 && barber.trim().length >= 2) ||
     step === 3;
+
+  if (business?.onboarded) return <Navigate to="/today" />;
 
   return (
     <div className="min-h-screen bg-background flex flex-col safe-top safe-bottom">

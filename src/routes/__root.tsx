@@ -129,6 +129,7 @@ function RootComponent() {
 
     const handleThemeChange = (event: Event) => {
       const nextTheme = normalizeVisualTheme((event as CustomEvent<VisualTheme>).detail);
+      applyVisualTheme(nextTheme);
       setVisualTheme(nextTheme);
     };
 
