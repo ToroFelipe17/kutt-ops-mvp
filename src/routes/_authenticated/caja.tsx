@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   Banknote,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CreditCard,
   Plus,
@@ -56,8 +57,10 @@ interface ClientRow {
 function CajaPage() {
   const { business } = useBusiness();
   const qc = useQueryClient();
-  const [from, to] = dayRange();
-  const accountingDate = localDateKey();
+  const [accountingDate, setAccountingDate] = useState(() => localDateKey());
+  const selectedDate = useMemo(() => parseLocalDateKey(accountingDate), [accountingDate]);
+  const [from, to] = dayRange(selectedDate);
+  const isToday = accountingDate === localDateKey();
 
   const { data: payments = [] } = useQuery({
     queryKey: ["caja-payments", business?.id, accountingDate],
@@ -77,7 +80,7 @@ function CajaPage() {
   });
 
   const { data: pending = [] } = useQuery({
-    queryKey: ["caja-pending", business?.id, from],
+    queryKey: ["caja-pending", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -187,14 +190,14 @@ function CajaPage() {
           filter: `business_id=eq.${business.id}`,
         },
         () => {
-          qc.invalidateQueries({ queryKey: ["caja-pending", business.id, from] });
+          qc.invalidateQueries({ queryKey: ["caja-pending", business.id, accountingDate] });
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [accountingDate, business?.id, from, qc]);
+  }, [accountingDate, business?.id, qc]);
 
   const totals = useMemo(
     () => computeDayTotals(payments, pending, movements),
@@ -220,7 +223,9 @@ function CajaPage() {
       <header className="px-5 pt-5 pb-3 flex items-end justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Caja</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Hoy</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {isToday ? "Hoy" : "Fecha seleccionada"}
+          </h1>
         </div>
         <Link
           to="/more/close"
@@ -229,6 +234,41 @@ function CajaPage() {
           Cerrar día <ChevronRight className="w-3.5 h-3.5" />
         </Link>
       </header>
+
+      <section className="px-5 pb-3">
+        <div className="h-12 rounded-xl bg-surface hairline flex items-center gap-1 p-1">
+          <button
+            type="button"
+            title="Día anterior"
+            onClick={() => setAccountingDate((current) => shiftLocalDateKey(current, -1))}
+            className="h-10 w-10 rounded-lg grid place-items-center text-muted-foreground active:scale-95 transition-transform"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div className="flex-1 min-w-0 text-center">
+            <p className="text-sm font-medium capitalize truncate">
+              {formatAccountingDateLabel(accountingDate)}
+            </p>
+          </div>
+          <button
+            type="button"
+            title="Día siguiente"
+            onClick={() => setAccountingDate((current) => shiftLocalDateKey(current, 1))}
+            disabled={isToday}
+            className="h-10 w-10 rounded-lg grid place-items-center text-muted-foreground active:scale-95 transition-transform disabled:opacity-30"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setAccountingDate(localDateKey())}
+            disabled={isToday}
+            className="h-10 px-3 rounded-lg bg-background hairline text-xs font-medium active:scale-[0.98] transition-transform disabled:opacity-40"
+          >
+            Hoy
+          </button>
+        </div>
+      </section>
 
       {/* HERO — saldo + utilidad */}
       <section className="px-5">
@@ -369,6 +409,7 @@ function CajaPage() {
         {movOpen && (
           <NewMovementSheet
             businessId={business!.id}
+            initialAccountingDate={accountingDate}
             services={services}
             staff={staff}
             recentClients={recentClients}
@@ -378,7 +419,9 @@ function CajaPage() {
               qc.invalidateQueries({
                 queryKey: ["caja-payments", business?.id, accountingDate],
               });
-              qc.invalidateQueries({ queryKey: ["caja-pending", business?.id, from] });
+              qc.invalidateQueries({
+                queryKey: ["caja-pending", business?.id, accountingDate],
+              });
             }}
           />
         )}
@@ -505,6 +548,7 @@ function MovementItem({ m }: { m: CashMovementRow }) {
 
 function NewMovementSheet({
   businessId,
+  initialAccountingDate,
   services,
   staff,
   recentClients,
@@ -512,6 +556,7 @@ function NewMovementSheet({
   onDone,
 }: {
   businessId: string;
+  initialAccountingDate: string;
   services: ServiceRow[];
   staff: StaffRow[];
   recentClients: ClientRow[];
@@ -528,8 +573,10 @@ function NewMovementSheet({
   const [pickedClient, setPickedClient] = useState<ClientRow | null>(null);
   const [method, setMethod] = useState<PaymentMethod>("efectivo");
   const [tip, setTip] = useState("");
-  const [serviceTime, setServiceTime] = useState(() => currentMinute());
-  const [accountingDate, setAccountingDate] = useState(() => localDateKey());
+  const [serviceTime, setServiceTime] = useState(() =>
+    applyDateInput(currentMinute(), initialAccountingDate),
+  );
+  const [accountingDate, setAccountingDate] = useState(initialAccountingDate);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -547,8 +594,10 @@ function NewMovementSheet({
   }, [clientName, recentClients]);
 
   useEffect(() => {
-    if (!serviceId && services[0]) setServiceId(services[0].id);
-  }, [serviceId, services]);
+    if (!isService || serviceId || !services[0]) return;
+    setServiceId(services[0].id);
+    setAmount(String(services[0].price));
+  }, [isService, serviceId, services]);
 
   useEffect(() => {
     if (!staffId && staff[0]) setStaffId(staff[0].id);
@@ -752,6 +801,15 @@ function NewMovementSheet({
             </button>
           )}
 
+          <div className="mt-4">
+            <DateTimeInput
+              label="Fecha contable"
+              value={accountingDate}
+              type="date"
+              onChange={updateAccountingDate}
+            />
+          </div>
+
           <div className="mt-4 rounded-2xl bg-background/50 hairline p-4 text-center">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
               {isService ? "Monto del servicio" : "Monto"}
@@ -772,7 +830,7 @@ function NewMovementSheet({
           </div>
 
           {isService ? (
-            hasValidAmount ? (
+            hasValidAmount || services.length > 0 ? (
               <div className="mt-4 space-y-4">
                 <div>
                   <p className="text-xs text-muted-foreground px-1">Servicio</p>
@@ -786,7 +844,10 @@ function NewMovementSheet({
                         <button
                           key={service.id}
                           type="button"
-                          onClick={() => setServiceId(service.id)}
+                          onClick={() => {
+                            setServiceId(service.id);
+                            setAmount(String(service.price));
+                          }}
                           className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
                             service.id === serviceId
                               ? "bg-foreground text-background"
@@ -860,13 +921,7 @@ function NewMovementSheet({
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <DateTimeInput
-                    label="Fecha contable"
-                    value={accountingDate}
-                    type="date"
-                    onChange={updateAccountingDate}
-                  />
+                <div>
                   <DateTimeInput
                     label="Hora"
                     value={timeInputValue(serviceTime)}
@@ -929,13 +984,7 @@ function NewMovementSheet({
               </div>
             )
           ) : (
-            <div className="mt-4 space-y-3">
-              <DateTimeInput
-                label="Fecha contable"
-                value={accountingDate}
-                type="date"
-                onChange={updateAccountingDate}
-              />
+            <div className="mt-4">
               <input
                 placeholder="Concepto (ej: arriendo, productos...)"
                 value={concept}
@@ -966,6 +1015,26 @@ const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string; icon: typeof
   { value: "debito", label: methodLabel("debito"), icon: CreditCard },
   { value: "credito", label: methodLabel("credito"), icon: CreditCard },
 ];
+
+function parseLocalDateKey(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day, 12);
+}
+
+function shiftLocalDateKey(value: string, days: number): string {
+  const date = parseLocalDateKey(value);
+  date.setDate(date.getDate() + days);
+  return localDateKey(date);
+}
+
+function formatAccountingDateLabel(value: string): string {
+  return parseLocalDateKey(value).toLocaleDateString("es-CL", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
 
 function DateTimeInput({
   label,
