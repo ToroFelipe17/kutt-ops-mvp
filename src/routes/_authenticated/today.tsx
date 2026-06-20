@@ -18,14 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { BottomNav } from "@/components/BottomNav";
 import { StatusBadge, type AppointmentStatus } from "@/components/StatusBadge";
-import {
-  clp,
-  endOfDay,
-  localDateKey,
-  shortTime,
-  startOfDay,
-  whatsappLink,
-} from "@/lib/format";
+import { clp, endOfDay, localDateKey, shortTime, startOfDay, whatsappLink } from "@/lib/format";
 import {
   encodePaymentNotes,
   getPaymentTipAmount,
