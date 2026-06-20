@@ -17,5 +17,9 @@ export const STATUS_STYLES: Record<AppointmentStatus, { dot: string; text: strin
   llego: { dot: "bg-foreground", text: "text-foreground", bg: "bg-foreground/10" },
   pagado: { dot: "bg-success", text: "text-success", bg: "bg-success/10" },
   completado: { dot: "bg-muted-foreground", text: "text-muted-foreground", bg: "bg-muted/40" },
-  cancelado: { dot: "bg-destructive", text: "text-destructive", bg: "bg-destructive/10" },
+  cancelado: {
+    dot: "bg-destructive/70",
+    text: "text-destructive/80",
+    bg: "bg-muted/40 hairline",
+  },
 };
