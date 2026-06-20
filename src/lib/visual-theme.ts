@@ -8,6 +8,16 @@ const THEME_COLORS: Record<VisualTheme, string> = {
   light: "#f8f8f7",
 };
 
+const LEGACY_INLINE_THEME_PROPERTIES = [
+  "--primary",
+  "--primary-foreground",
+  "--accent",
+  "--accent-foreground",
+  "--border",
+  "--border-strong",
+  "--ring",
+];
+
 export const VISUAL_THEMES: Array<{
   value: VisualTheme;
   label: string;
@@ -48,6 +58,7 @@ export function applyVisualTheme(theme: VisualTheme) {
   if (typeof document === "undefined") return;
   const normalizedTheme = normalizeVisualTheme(theme);
   const root = document.documentElement;
+  LEGACY_INLINE_THEME_PROPERTIES.forEach((property) => root.style.removeProperty(property));
   root.dataset.theme = normalizedTheme;
   root.classList.toggle("dark", normalizedTheme === "dark");
   root.style.colorScheme = normalizedTheme;

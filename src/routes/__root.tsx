@@ -139,9 +139,11 @@ function RootComponent() {
 
     window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
     window.addEventListener("storage", handleStorage);
+    window.addEventListener("pageshow", syncTheme);
     return () => {
       window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("pageshow", syncTheme);
     };
   }, []);
 

@@ -6,6 +6,7 @@ import { ArrowLeft, Check, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { addMinutes, clp, shortTime } from "@/lib/format";
+import { getSafeStaffColor } from "@/lib/staff-colors";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/new")({
@@ -253,7 +254,7 @@ function NewAppointment() {
                 >
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ background: s.color ?? "#10b981" }}
+                    style={{ background: getSafeStaffColor(s.color) }}
                   />
                   <span className="text-sm font-medium">{s.name}</span>
                 </button>

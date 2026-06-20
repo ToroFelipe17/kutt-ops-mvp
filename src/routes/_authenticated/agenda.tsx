@@ -7,6 +7,7 @@ import { useBusiness } from "@/lib/business-context";
 import { BottomNav } from "@/components/BottomNav";
 import { StatusBadge, type AppointmentStatus } from "@/components/StatusBadge";
 import { clp, endOfDay, shortTime, startOfDay } from "@/lib/format";
+import { getSafeStaffColor } from "@/lib/staff-colors";
 
 export const Route = createFileRoute("/_authenticated/agenda")({
   component: Agenda,
@@ -157,8 +158,8 @@ function Agenda() {
                     className="absolute left-10 right-0 z-10 flex items-center gap-2 pointer-events-none"
                     style={{ top }}
                   >
-                    <div className="h-2 w-2 rounded-full bg-destructive shadow-[0_0_0_4px_rgba(239,68,68,0.15)]" />
-                    <div className="flex-1 h-px bg-destructive/60" />
+                    <div className="h-2 w-2 rounded-full bg-info shadow-[0_0_0_4px_rgba(56,189,248,0.15)]" />
+                    <div className="flex-1 h-px bg-info/60" />
                   </div>
                 );
               })()}
@@ -170,7 +171,7 @@ function Agenda() {
               if (offsetMin < 0) return null;
               const top = (offsetMin / 60) * HOUR_PX;
               const height = Math.max(48, (r.duration_min / 60) * HOUR_PX - 4);
-              const accent = r.staff?.color ?? "#10b981";
+              const accent = getSafeStaffColor(r.staff?.color);
               return (
                 <div
                   key={r.id}

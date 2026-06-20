@@ -19,6 +19,7 @@ import {
   type WeekdayId,
 } from "@/lib/business-hours";
 import { clp } from "@/lib/format";
+import { DEFAULT_STAFF_COLOR, getSafeStaffColor } from "@/lib/staff-colors";
 import {
   getStoredVisualTheme,
   setStoredVisualTheme,
@@ -46,8 +47,6 @@ interface ServiceRow {
   duration_min: number;
   active: boolean;
 }
-
-const STAFF_COLORS = ["#10b981", "#38bdf8", "#f59e0b", "#a78bfa", "#f43f5e"];
 
 function SettingsPage() {
   const { business, refresh } = useBusiness();
@@ -150,7 +149,7 @@ function SettingsPage() {
     const { error } = await supabase.from("staff").insert({
       business_id: business.id,
       name,
-      color: STAFF_COLORS[staff.length % STAFF_COLORS.length],
+      color: DEFAULT_STAFF_COLOR,
       commission_pct: commission,
       active: true,
     });
@@ -471,7 +470,7 @@ function SettingsPage() {
                   <div className="min-w-0 flex items-center gap-3">
                     <span
                       className="h-8 w-8 rounded-full shrink-0"
-                      style={{ background: member.color ?? "var(--color-muted)" }}
+                      style={{ background: getSafeStaffColor(member.color) }}
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{member.name}</p>

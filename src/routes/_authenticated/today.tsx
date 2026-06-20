@@ -25,6 +25,7 @@ import {
   methodLabel,
   type PaymentMethod,
 } from "@/lib/finance";
+import { getSafeStaffColor } from "@/lib/staff-colors";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/today")({
@@ -369,7 +370,7 @@ function AppointmentRowCard({
         </div>
         <span
           className="w-1 self-stretch rounded-full"
-          style={{ background: a.staff?.color ?? "var(--color-muted-foreground)" }}
+          style={{ background: getSafeStaffColor(a.staff?.color) }}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">

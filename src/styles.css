@@ -148,6 +148,7 @@
   html, body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    accent-color: var(--color-success);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

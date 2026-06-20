@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { clp } from "@/lib/format";
 import { accountingMonthRange } from "@/lib/finance";
+import { getSafeStaffColor } from "@/lib/staff-colors";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/commissions")({
@@ -105,14 +106,15 @@ function CommissionsPage() {
         <ul className="px-5 space-y-2">
           {staff.map((s) => {
             const stats = byStaff.get(s.id) ?? { sales: 0, commission: 0, count: 0 };
+            const staffColor = getSafeStaffColor(s.color);
             return (
               <li key={s.id} className="rounded-2xl bg-surface hairline p-4">
                 <div className="flex items-center gap-3">
                   <span
                     className="h-10 w-10 rounded-full grid place-items-center text-sm font-semibold"
                     style={{
-                      background: (s.color ?? "#10b981") + "30",
-                      color: s.color ?? "#10b981",
+                      background: staffColor + "30",
+                      color: staffColor,
                     }}
                   >
                     {s.name.slice(0, 1).toUpperCase()}

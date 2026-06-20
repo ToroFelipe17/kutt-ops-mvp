@@ -5,6 +5,7 @@ import { ArrowRight, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { useBusiness } from "@/lib/business-context";
+import { DEFAULT_STAFF_COLOR } from "@/lib/staff-colors";
 import {
   getStoredVisualTheme,
   setStoredVisualTheme,
@@ -16,8 +17,6 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authenticated/onboarding")({
   component: Onboarding,
 });
-
-const LEGACY_PRIMARY_COLOR = "#10b981";
 
 const DEFAULT_SERVICES = [
   { name: "Corte clásico", duration_min: 30, price: 12000 },
@@ -87,7 +86,7 @@ function Onboarding() {
           .insert({
             owner_id: user.id,
             name: name.trim(),
-            primary_color: LEGACY_PRIMARY_COLOR,
+            primary_color: DEFAULT_STAFF_COLOR,
             open_hour: open,
             close_hour: close,
             onboarded: false,
@@ -110,7 +109,7 @@ function Onboarding() {
         const { error: staffInsertError } = await supabase.from("staff").insert({
           business_id: businessId,
           name: barber.trim() || "Barbero 1",
-          color: LEGACY_PRIMARY_COLOR,
+          color: DEFAULT_STAFF_COLOR,
         });
         if (staffInsertError) throw staffInsertError;
       }
