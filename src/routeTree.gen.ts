@@ -23,6 +23,7 @@ import { Route as AuthenticatedMoreSettingsRouteImport } from './routes/_authent
 import { Route as AuthenticatedMoreExportRouteImport } from './routes/_authenticated/more/export'
 import { Route as AuthenticatedMoreCommissionsRouteImport } from './routes/_authenticated/more/commissions'
 import { Route as AuthenticatedMoreCloseRouteImport } from './routes/_authenticated/more/close'
+import { Route as AuthenticatedMoreCashAgendaRouteImport } from './routes/_authenticated/more/cash-agenda'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -95,6 +96,12 @@ const AuthenticatedMoreCloseRoute = AuthenticatedMoreCloseRouteImport.update({
   path: '/close',
   getParentRoute: () => AuthenticatedMoreRoute,
 } as any)
+const AuthenticatedMoreCashAgendaRoute =
+  AuthenticatedMoreCashAgendaRouteImport.update({
+    id: '/cash-agenda',
+    path: '/cash-agenda',
+    getParentRoute: () => AuthenticatedMoreRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/new': typeof AuthenticatedNewRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/today': typeof AuthenticatedTodayRoute
+  '/more/cash-agenda': typeof AuthenticatedMoreCashAgendaRoute
   '/more/close': typeof AuthenticatedMoreCloseRoute
   '/more/commissions': typeof AuthenticatedMoreCommissionsRoute
   '/more/export': typeof AuthenticatedMoreExportRoute
@@ -121,6 +129,7 @@ export interface FileRoutesByTo {
   '/new': typeof AuthenticatedNewRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/today': typeof AuthenticatedTodayRoute
+  '/more/cash-agenda': typeof AuthenticatedMoreCashAgendaRoute
   '/more/close': typeof AuthenticatedMoreCloseRoute
   '/more/commissions': typeof AuthenticatedMoreCommissionsRoute
   '/more/export': typeof AuthenticatedMoreExportRoute
@@ -138,6 +147,7 @@ export interface FileRoutesById {
   '/_authenticated/new': typeof AuthenticatedNewRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/today': typeof AuthenticatedTodayRoute
+  '/_authenticated/more/cash-agenda': typeof AuthenticatedMoreCashAgendaRoute
   '/_authenticated/more/close': typeof AuthenticatedMoreCloseRoute
   '/_authenticated/more/commissions': typeof AuthenticatedMoreCommissionsRoute
   '/_authenticated/more/export': typeof AuthenticatedMoreExportRoute
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/onboarding'
     | '/today'
+    | '/more/cash-agenda'
     | '/more/close'
     | '/more/commissions'
     | '/more/export'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/onboarding'
     | '/today'
+    | '/more/cash-agenda'
     | '/more/close'
     | '/more/commissions'
     | '/more/export'
@@ -186,6 +198,7 @@ export interface FileRouteTypes {
     | '/_authenticated/new'
     | '/_authenticated/onboarding'
     | '/_authenticated/today'
+    | '/_authenticated/more/cash-agenda'
     | '/_authenticated/more/close'
     | '/_authenticated/more/commissions'
     | '/_authenticated/more/export'
@@ -298,10 +311,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMoreCloseRouteImport
       parentRoute: typeof AuthenticatedMoreRoute
     }
+    '/_authenticated/more/cash-agenda': {
+      id: '/_authenticated/more/cash-agenda'
+      path: '/cash-agenda'
+      fullPath: '/more/cash-agenda'
+      preLoaderRoute: typeof AuthenticatedMoreCashAgendaRouteImport
+      parentRoute: typeof AuthenticatedMoreRoute
+    }
   }
 }
 
 interface AuthenticatedMoreRouteChildren {
+  AuthenticatedMoreCashAgendaRoute: typeof AuthenticatedMoreCashAgendaRoute
   AuthenticatedMoreCloseRoute: typeof AuthenticatedMoreCloseRoute
   AuthenticatedMoreCommissionsRoute: typeof AuthenticatedMoreCommissionsRoute
   AuthenticatedMoreExportRoute: typeof AuthenticatedMoreExportRoute
@@ -309,6 +330,7 @@ interface AuthenticatedMoreRouteChildren {
 }
 
 const AuthenticatedMoreRouteChildren: AuthenticatedMoreRouteChildren = {
+  AuthenticatedMoreCashAgendaRoute: AuthenticatedMoreCashAgendaRoute,
   AuthenticatedMoreCloseRoute: AuthenticatedMoreCloseRoute,
   AuthenticatedMoreCommissionsRoute: AuthenticatedMoreCommissionsRoute,
   AuthenticatedMoreExportRoute: AuthenticatedMoreExportRoute,

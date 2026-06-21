@@ -7,13 +7,14 @@ import {
   ArrowUpRight,
   Banknote,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CreditCard,
   Plus,
   Receipt,
   Send,
-  Wallet,
   X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -75,7 +76,7 @@ function CajaPage() {
         )
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: true });
       if (error) throw error;
       return data as PaymentRow[];
     },
@@ -106,7 +107,7 @@ function CajaPage() {
         .select("id,accounting_date,kind,amount,concept,created_at")
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: true });
       if (error) throw error;
       return (data ?? []) as CashMovementRow[];
     },
@@ -211,9 +212,39 @@ function CajaPage() {
       : 0;
 
   const staffById = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s])), [staff]);
+  const appointmentTimeById = useMemo(
+    () =>
+      Object.fromEntries(
+        appointments.map((appointment) => [appointment.id, appointment.starts_at]),
+      ),
+    [appointments],
+  );
+  const chronologicalPayments = useMemo(
+    () =>
+      [...payments].sort((a, b) => {
+        const aTime = a.appointment_id ? appointmentTimeById[a.appointment_id] : null;
+        const bTime = b.appointment_id ? appointmentTimeById[b.appointment_id] : null;
+        return (
+          new Date(aTime ?? a.created_at).getTime() - new Date(bTime ?? b.created_at).getTime()
+        );
+      }),
+    [appointmentTimeById, payments],
+  );
 
   const [movOpen, setMovOpen] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
+  const [showAllPayments, setShowAllPayments] = useState(false);
+  const [showAllMovements, setShowAllMovements] = useState(false);
+
+  useEffect(() => {
+    setShowAllPayments(false);
+    setShowAllMovements(false);
+  }, [accountingDate]);
+
+  const visiblePayments = showAllPayments
+    ? chronologicalPayments
+    : chronologicalPayments.slice(0, 10);
+  const visibleMovements = showAllMovements ? movements : movements.slice(0, 10);
 
   const setStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: PaymentStatus }) => {
@@ -227,16 +258,16 @@ function CajaPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28 safe-top">
-      <header className="px-5 pt-5 pb-3 flex items-end justify-between">
-        <div>
+      <header className="flex items-end justify-between gap-3 px-5 pb-3 pt-5">
+        <div className="min-w-0 flex-1">
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Caja</p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {isToday ? "Hoy" : "Fecha seleccionada"}
+          <h1 className="truncate text-2xl font-semibold tracking-tight">
+            {business?.name ?? "Resumen de caja"}
           </h1>
         </div>
         <Link
           to="/more/close"
-          className="text-xs font-medium text-muted-foreground active:text-foreground flex items-center gap-1"
+          className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground active:text-foreground"
         >
           Ver informe <ChevronRight className="w-3.5 h-3.5" />
         </Link>
@@ -345,9 +376,8 @@ function CajaPage() {
           label="Utilidad estimada"
           value={clp(totals.profit)}
           tone={totals.profit >= 0 ? "success" : "destructive"}
-          sub="Ventas + ingresos − comisiones − egresos"
         />
-        <KpiCard label="Propinas" value={clp(totals.tips)} sub="Separadas de ventas" />
+        <KpiCard label="Propinas" value={clp(totals.tips)} />
       </section>
 
       <section className="px-5 mt-3">
@@ -369,7 +399,17 @@ function CajaPage() {
                 <span className="text-muted-foreground">de {clp(totals.agendaExpected)}</span>
               </p>
             </div>
-            <span className="text-xs font-semibold tabular text-success">{agendaProgress}%</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold tabular text-success">{agendaProgress}%</span>
+              <Link
+                to="/more/cash-agenda"
+                search={{ date: accountingDate }}
+                aria-label="Abrir detalle de cobros de agenda"
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-muted px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/80"
+              >
+                Detalle <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </div>
           <div className="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
             <div
@@ -399,48 +439,50 @@ function CajaPage() {
         </button>
         <Link
           to="/more/export"
-          className="col-span-2 h-10 rounded-xl bg-surface hairline flex items-center justify-center gap-2 text-xs font-medium active:scale-[0.98] transition-transform"
+          className="col-span-2 h-12 w-[calc(50%-0.25rem)] justify-self-center rounded-xl bg-surface hairline flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.98] transition-transform"
         >
           <Receipt className="w-4 h-4" /> Exportar
         </Link>
       </section>
 
-      {/* Movimientos */}
-      <section className="px-5 mt-6">
-        <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2 px-1">
-          Movimientos
-        </p>
-        {payments.length === 0 && movements.length === 0 ? (
-          <div className="rounded-2xl bg-surface hairline p-8 text-center">
-            <div className="mx-auto h-12 w-12 rounded-full bg-muted grid place-items-center mb-3">
-              <Wallet className="w-5 h-5 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-medium">Caja en cero</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Los cobros aparecerán aquí en tiempo real.
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-1.5">
-            {payments.map((p) => (
-              <PaymentItem
-                key={p.id}
-                p={p}
-                staffName={p.staff_id ? staffById[p.staff_id]?.name : null}
-                onToggle={() =>
-                  setStatus.mutate({
-                    id: p.id,
-                    status: isCollectedPayment(p) ? "pendiente" : "conciliado",
-                  })
-                }
-              />
-            ))}
-            {movements.map((m) => (
-              <MovementItem key={m.id} m={m} />
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="mt-6 space-y-5 px-5">
+        <MovementGroup
+          title="Cobros"
+          count={payments.length}
+          emptyLabel="No hay cobros registrados para esta fecha."
+          expanded={showAllPayments}
+          onToggle={() => setShowAllPayments((value) => !value)}
+        >
+          {visiblePayments.map((p) => (
+            <PaymentItem
+              key={p.id}
+              p={p}
+              occurredAt={
+                (p.appointment_id ? appointmentTimeById[p.appointment_id] : null) ?? p.created_at
+              }
+              staffName={p.staff_id ? staffById[p.staff_id]?.name : null}
+              onToggle={() =>
+                setStatus.mutate({
+                  id: p.id,
+                  status: isCollectedPayment(p) ? "pendiente" : "conciliado",
+                })
+              }
+            />
+          ))}
+        </MovementGroup>
+
+        <MovementGroup
+          title="Ingresos y egresos"
+          count={movements.length}
+          emptyLabel="No hay movimientos manuales para esta fecha."
+          expanded={showAllMovements}
+          onToggle={() => setShowAllMovements((value) => !value)}
+        >
+          {visibleMovements.map((movement) => (
+            <MovementItem key={movement.id} m={movement} />
+          ))}
+        </MovementGroup>
+      </div>
 
       <AnimatePresence>
         {movOpen && (
@@ -487,6 +529,61 @@ function CajaPage() {
   );
 }
 
+function MovementGroup({
+  title,
+  count,
+  emptyLabel,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number;
+  emptyLabel: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const hiddenCount = Math.max(0, count - 10);
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between px-1">
+        <h2 className="text-[11px] uppercase tracking-widest text-muted-foreground">{title}</h2>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] tabular text-muted-foreground">
+          {count}
+        </span>
+      </div>
+      {count === 0 ? (
+        <p className="rounded-2xl bg-surface px-4 py-5 text-center text-xs text-muted-foreground hairline">
+          {emptyLabel}
+        </p>
+      ) : (
+        <>
+          <ul className="space-y-1.5">{children}</ul>
+          {count > 10 && (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="mx-auto mt-2 flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {expanded ? (
+                <>
+                  Mostrar primeros 10 <ChevronUp className="h-3.5 w-3.5" />
+                </>
+              ) : (
+                <>
+                  Mostrar resto ({hiddenCount}) <ChevronDown className="h-3.5 w-3.5" />
+                </>
+              )}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function Mini({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="rounded-xl bg-background/40 hairline p-2.5">
@@ -502,12 +599,10 @@ function Mini({ icon, label, value }: { icon: React.ReactNode; label: string; va
 function KpiCard({
   label,
   value,
-  sub,
   tone,
 }: {
   label: string;
   value: string;
-  sub?: string;
   tone?: "success" | "destructive";
 }) {
   return (
@@ -524,7 +619,6 @@ function KpiCard({
       >
         {value}
       </p>
-      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -560,10 +654,12 @@ function CashSummaryRow({
 
 function PaymentItem({
   p,
+  occurredAt,
   staffName,
   onToggle,
 }: {
   p: PaymentRow;
+  occurredAt: string;
   staffName: string | null | undefined;
   onToggle: () => void;
 }) {
@@ -586,7 +682,7 @@ function PaymentItem({
           ) : null}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          {shortTime(p.created_at)}
+          {shortTime(occurredAt)}
           {staffName ? ` · ${staffName}` : ""}
         </p>
       </div>
