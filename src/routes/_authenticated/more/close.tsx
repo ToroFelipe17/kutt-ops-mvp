@@ -20,6 +20,7 @@ function ClosePage() {
   const qc = useQueryClient();
   const [from, to] = dayRange();
   const accountingDate = localDateKey();
+  // TODO(Phase 2C): Create automatic snapshots after midnight in America/Santiago.
   const [counted, setCounted] = useState("");
 
   const { data: payments = [] } = useQuery({
@@ -111,7 +112,7 @@ function ClosePage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Día cerrado");
+      toast.success(existing ? "Informe actualizado" : "Informe guardado");
       qc.invalidateQueries({ queryKey: ["close-existing", business?.id, accountingDate] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
@@ -128,7 +129,7 @@ function ClosePage() {
         </Link>
         <div>
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
-            Cierre diario
+            Informe diario
           </p>
           <h1 className="text-xl font-semibold tracking-tight capitalize">
             {new Date().toLocaleDateString("es-CL", {
@@ -205,11 +206,11 @@ function ClosePage() {
           className="w-full h-14 rounded-2xl bg-foreground text-background font-semibold active:scale-[0.98] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
         >
           <CheckCircle2 className="w-4 h-4" />
-          {existing ? "Actualizar cierre" : "Cerrar día"}
+          {existing ? "Actualizar informe" : "Guardar informe"}
         </button>
         {existing && (
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Cierre guardado a las{" "}
+            Informe guardado a las{" "}
             {new Date(existing.created_at).toLocaleTimeString("es-CL", {
               hour: "2-digit",
               minute: "2-digit",

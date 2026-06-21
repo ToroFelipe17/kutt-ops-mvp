@@ -28,8 +28,8 @@ function MoreIndex() {
   const items = [
     {
       to: "/more/close",
-      label: "Cierre diario",
-      desc: "Resumen y conteo de caja",
+      label: "Informe diario",
+      desc: "Resumen calculado y conteo de caja",
       icon: ClipboardCheck,
     },
     { to: "/more/commissions", label: "Comisiones", desc: "% por barbero y deudas", icon: Users2 },

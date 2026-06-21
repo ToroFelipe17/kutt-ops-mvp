@@ -213,6 +213,7 @@ function CajaPage() {
   const staffById = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s])), [staff]);
 
   const [movOpen, setMovOpen] = useState(false);
+  const [serviceOpen, setServiceOpen] = useState(false);
 
   const setStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: PaymentStatus }) => {
@@ -237,7 +238,7 @@ function CajaPage() {
           to="/more/close"
           className="text-xs font-medium text-muted-foreground active:text-foreground flex items-center gap-1"
         >
-          Cerrar día <ChevronRight className="w-3.5 h-3.5" />
+          Ver informe <ChevronRight className="w-3.5 h-3.5" />
         </Link>
       </header>
 
@@ -252,11 +253,22 @@ function CajaPage() {
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <div className="min-w-0 rounded-lg border border-border/60 bg-background px-2 py-2 text-center">
+          <label className="relative min-w-0 cursor-pointer rounded-lg border border-border/60 bg-background px-2 py-2 text-center">
             <p className="truncate text-sm font-medium capitalize leading-5">
               {formatAccountingDateLabel(accountingDate)}
             </p>
-          </div>
+            <input
+              type="date"
+              aria-label="Seleccionar fecha contable"
+              value={accountingDate}
+              max={localDateKey()}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value && value <= localDateKey()) setAccountingDate(value);
+              }}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            />
+          </label>
           <button
             type="button"
             title="Día siguiente"
@@ -379,9 +391,15 @@ function CajaPage() {
         >
           <Plus className="w-4 h-4" /> Ingreso / egreso
         </button>
+        <button
+          onClick={() => setServiceOpen(true)}
+          className="h-12 rounded-xl bg-surface hairline flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.98] transition-transform"
+        >
+          <Receipt className="w-4 h-4" /> Cobrar servicio
+        </button>
         <Link
           to="/more/export"
-          className="h-12 rounded-xl bg-surface hairline flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.98] transition-transform"
+          className="col-span-2 h-10 rounded-xl bg-surface hairline flex items-center justify-center gap-2 text-xs font-medium active:scale-[0.98] transition-transform"
         >
           <Receipt className="w-4 h-4" /> Exportar
         </Link>
@@ -427,6 +445,7 @@ function CajaPage() {
       <AnimatePresence>
         {movOpen && (
           <NewMovementSheet
+            mode="movement"
             businessId={business!.id}
             initialAccountingDate={accountingDate}
             services={services}
@@ -438,6 +457,23 @@ function CajaPage() {
               qc.invalidateQueries({
                 queryKey: ["caja-payments", business?.id, accountingDate],
               });
+              qc.invalidateQueries({
+                queryKey: ["caja-appointments", business?.id, accountingDate],
+              });
+            }}
+          />
+        )}
+        {serviceOpen && (
+          <NewMovementSheet
+            mode="service"
+            businessId={business!.id}
+            initialAccountingDate={accountingDate}
+            services={services}
+            staff={staff}
+            recentClients={recentClients}
+            onClose={() => setServiceOpen(false)}
+            onDone={() => {
+              qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, accountingDate] });
               qc.invalidateQueries({
                 queryKey: ["caja-appointments", business?.id, accountingDate],
               });
@@ -577,6 +613,7 @@ function PaymentItem({
 }
 
 function MovementItem({ m }: { m: CashMovementRow }) {
+  // TODO(Phase 2C): Add audited reversal records before exposing movement annulment.
   const isOut = m.kind === "egreso";
   return (
     <li className="rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3">
@@ -593,15 +630,21 @@ function MovementItem({ m }: { m: CashMovementRow }) {
           {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso manual"}
         </p>
       </div>
-      <p className={`text-sm font-semibold tabular ${isOut ? "text-destructive" : "text-info"}`}>
-        {isOut ? "−" : "+"}
-        {clp(m.amount)}
-      </p>
+      <div className="text-right">
+        <p className={`text-sm font-semibold tabular ${isOut ? "text-destructive" : "text-info"}`}>
+          {isOut ? "−" : "+"}
+          {clp(m.amount)}
+        </p>
+        <span className="mt-0.5 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+          Registrado
+        </span>
+      </div>
     </li>
   );
 }
 
 function NewMovementSheet({
+  mode,
   businessId,
   initialAccountingDate,
   services,
@@ -610,6 +653,7 @@ function NewMovementSheet({
   onClose,
   onDone,
 }: {
+  mode: "movement" | "service";
   businessId: string;
   initialAccountingDate: string;
   services: ServiceRow[];
@@ -618,10 +662,10 @@ function NewMovementSheet({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const isService = mode === "service";
   const [kind, setKind] = useState<"ingreso" | "egreso">("egreso");
   const [amount, setAmount] = useState("");
   const [concept, setConcept] = useState("");
-  const [isService, setIsService] = useState(false);
   const [serviceId, setServiceId] = useState("");
   const [staffId, setStaffId] = useState("");
   const [clientName, setClientName] = useState("");
@@ -656,6 +700,7 @@ function NewMovementSheet({
   }, [staff, staffId]);
 
   const updateAccountingDate = (value: string) => {
+    if (!value || value > localDateKey()) return;
     setAccountingDate(value);
     setServiceTime((current) => applyDateInput(current, value));
   };
@@ -668,7 +713,7 @@ function NewMovementSheet({
     }
 
     if (!n || !concept.trim()) {
-      toast.error("Falta monto o concepto");
+      toast.error("Falta monto o motivo");
       return;
     }
     if (!hasValidAccountingDate) {
@@ -815,7 +860,9 @@ function NewMovementSheet({
       >
         <div className="p-5 pb-4 overflow-y-auto overscroll-contain">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Movimiento de caja</h2>
+            <h2 className="text-lg font-semibold">
+              {isService ? "Cobrar servicio" : "Movimiento manual"}
+            </h2>
             <button
               onClick={onClose}
               className="h-8 w-8 rounded-full bg-muted grid place-items-center"
@@ -824,33 +871,20 @@ function NewMovementSheet({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-background hairline">
-            {(["egreso", "ingreso"] as const).map((k) => (
-              <button
-                key={k}
-                onClick={() => {
-                  setKind(k);
-                  if (k === "egreso") setIsService(false);
-                }}
-                className={`h-10 rounded-lg text-sm font-medium ${
-                  kind === k ? "bg-foreground text-background" : "text-muted-foreground"
-                }`}
-              >
-                {k === "egreso" ? "Egreso" : "Ingreso"}
-              </button>
-            ))}
-          </div>
-
-          {kind === "ingreso" && (
-            <button
-              type="button"
-              onClick={() => setIsService((value) => !value)}
-              className={`mt-4 w-full h-11 rounded-xl hairline text-sm font-medium transition-colors ${
-                isService ? "bg-success/15 text-success" : "bg-background text-foreground"
-              }`}
-            >
-              ¿Este ingreso corresponde a un servicio/corte?
-            </button>
+          {!isService && (
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-background hairline">
+              {(["egreso", "ingreso"] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setKind(k)}
+                  className={`h-10 rounded-lg text-sm font-medium ${
+                    kind === k ? "bg-foreground text-background" : "text-muted-foreground"
+                  }`}
+                >
+                  {k === "egreso" ? "Egreso" : "Ingreso"}
+                </button>
+              ))}
+            </div>
           )}
 
           <div className="mt-4">
@@ -867,7 +901,6 @@ function NewMovementSheet({
             <div className="mt-4 rounded-2xl border border-border/70 bg-background/50 p-4 text-center">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Monto</p>
               <input
-                autoFocus
                 inputMode="numeric"
                 placeholder="$0"
                 value={amount ? clp(parseCurrencyInput(amount)) : ""}
@@ -1032,11 +1065,14 @@ function NewMovementSheet({
             )
           ) : (
             <div className="mt-4">
+              <p className="text-xs text-muted-foreground px-1">
+                {kind === "ingreso" ? "Motivo del ingreso" : "Motivo del egreso"}
+              </p>
               <input
-                placeholder="Concepto (ej: arriendo, productos...)"
+                placeholder={kind === "ingreso" ? "Ej: venta de productos" : "Ej: arriendo"}
                 value={concept}
                 onChange={(e) => setConcept(e.target.value)}
-                className="w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+                className="mt-2 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
               />
             </div>
           )}
@@ -1104,6 +1140,7 @@ function DateTimeInput({
       <input
         type={type}
         value={value}
+        max={type === "date" ? localDateKey() : undefined}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 block min-w-0 max-w-full w-full bg-transparent text-sm font-medium text-foreground outline-none"
       />
