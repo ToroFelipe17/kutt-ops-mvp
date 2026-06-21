@@ -37,8 +37,8 @@ function ClosePage() {
     },
   });
 
-  const { data: pending = [] } = useQuery({
-    queryKey: ["close-pending", business?.id, from],
+  const { data: appointments = [] } = useQuery({
+    queryKey: ["close-appointments", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data } = await supabase
@@ -47,7 +47,7 @@ function ClosePage() {
         .eq("business_id", business!.id)
         .gte("starts_at", from)
         .lte("starts_at", to)
-        .not("status", "in", "(pagado,completado,cancelado)");
+        .neq("status", "cancelado");
       return data ?? [];
     },
   });
@@ -80,8 +80,8 @@ function ClosePage() {
   });
 
   const totals = useMemo(
-    () => computeDayTotals(payments, pending, movements),
-    [payments, pending, movements],
+    () => computeDayTotals(payments, appointments, movements),
+    [payments, appointments, movements],
   );
   const countedNum = parseInt(counted.replace(/\D/g, ""), 10) || 0;
   const diff = countedNum > 0 ? countedNum - totals.cashOnHand : 0;
@@ -92,7 +92,8 @@ function ClosePage() {
         business_id: business!.id,
         close_date: accountingDate,
         total_sales: totals.sales,
-        total_cash: totals.cash,
+        // The current schema has no manual-income column, so total_cash stores expected physical cash.
+        total_cash: totals.cashOnHand,
         total_transfer: totals.transfer,
         total_card: totals.card,
         total_pending: totals.pending,
@@ -149,12 +150,15 @@ function ClosePage() {
           <p className="mt-1 text-4xl font-semibold tabular tracking-tight">{clp(totals.sales)}</p>
 
           <dl className="mt-5 divide-y divide-border">
-            <Row label="Efectivo" value={clp(totals.cash)} />
+            <Row label="Efectivo por servicios" value={clp(totals.cash)} />
             <Row label="Transferencias" value={clp(totals.transfer)} />
             <Row label="Tarjeta" value={clp(totals.card)} />
+            <Row label="Propinas" value={clp(totals.tips)} />
+            <Row label="Ingresos manuales" value={clp(totals.extraIncome)} />
             <Row label="Por cobrar" value={clp(totals.pending)} tone="warning" />
             <Row label="Comisiones" value={`− ${clp(totals.commissions)}`} />
             <Row label="Egresos" value={`− ${clp(totals.expenses)}`} />
+            <Row label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
             <Row label="IVA estimado" value={clp(totals.ivaEstimated)} />
             <Row
               label="Utilidad estimada"

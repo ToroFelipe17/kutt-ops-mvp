@@ -24,6 +24,7 @@ import {
   computeDayTotals,
   dayRange,
   encodePaymentNotes,
+  isCollectedPayment,
   methodLabel,
   getPaymentTipAmount,
   type CashMovementRow,
@@ -80,8 +81,8 @@ function CajaPage() {
     },
   });
 
-  const { data: pending = [] } = useQuery({
-    queryKey: ["caja-pending", business?.id, accountingDate],
+  const { data: appointments = [] } = useQuery({
+    queryKey: ["caja-appointments", business?.id, accountingDate],
     enabled: !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -90,7 +91,7 @@ function CajaPage() {
         .eq("business_id", business!.id)
         .gte("starts_at", from)
         .lte("starts_at", to)
-        .not("status", "in", "(pagado,completado,cancelado)");
+        .neq("status", "cancelado");
       if (error) throw error;
       return data ?? [];
     },
@@ -191,7 +192,7 @@ function CajaPage() {
           filter: `business_id=eq.${business.id}`,
         },
         () => {
-          qc.invalidateQueries({ queryKey: ["caja-pending", business.id, accountingDate] });
+          qc.invalidateQueries({ queryKey: ["caja-appointments", business.id, accountingDate] });
         },
       )
       .subscribe();
@@ -201,9 +202,13 @@ function CajaPage() {
   }, [accountingDate, business?.id, qc]);
 
   const totals = useMemo(
-    () => computeDayTotals(payments, pending, movements),
-    [payments, pending, movements],
+    () => computeDayTotals(payments, appointments, movements),
+    [payments, appointments, movements],
   );
+  const agendaProgress =
+    totals.agendaExpected > 0
+      ? Math.min(100, Math.round((totals.agendaCollected / totals.agendaExpected) * 100))
+      : 0;
 
   const staffById = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s])), [staff]);
 
@@ -282,7 +287,7 @@ function CajaPage() {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl bg-gradient-to-br from-surface-elevated via-surface to-background hairline p-6 relative overflow-hidden"
+          className="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-surface-elevated via-surface to-background p-6 hairline"
         >
           <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-success/10 blur-3xl pointer-events-none" />
           <div className="relative">
@@ -328,34 +333,41 @@ function CajaPage() {
           label="Utilidad estimada"
           value={clp(totals.profit)}
           tone={totals.profit >= 0 ? "success" : "destructive"}
-          sub={`Ventas − comisiones − gastos`}
+          sub="Ventas + ingresos − comisiones − egresos"
         />
         <KpiCard label="Propinas" value={clp(totals.tips)} sub="Separadas de ventas" />
       </section>
 
-      {/* Conciliación */}
+      <section className="px-5 mt-3">
+        <dl className="divide-y divide-border rounded-2xl bg-surface px-4 hairline">
+          <CashSummaryRow label="Ingresos manuales" value={clp(totals.extraIncome)} tone="info" />
+          <CashSummaryRow label="Egresos" value={`− ${clp(totals.expenses)}`} tone="destructive" />
+          <CashSummaryRow label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
+        </dl>
+      </section>
+
+      {/* Cobros de agenda */}
       <section className="px-5 mt-5">
         <div className="rounded-2xl bg-surface hairline p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-muted-foreground">Conciliación</p>
+              <p className="text-xs text-muted-foreground">Cobros de agenda</p>
               <p className="mt-1 text-sm font-medium">
-                {clp(totals.reconciled)}{" "}
-                <span className="text-muted-foreground">de {clp(totals.sales)}</span>
+                {clp(totals.agendaCollected)}{" "}
+                <span className="text-muted-foreground">de {clp(totals.agendaExpected)}</span>
               </p>
             </div>
-            <span className="text-xs font-semibold tabular text-success">
-              {totals.sales > 0 ? Math.round((totals.reconciled / totals.sales) * 100) : 0}%
-            </span>
+            <span className="text-xs font-semibold tabular text-success">{agendaProgress}%</span>
           </div>
           <div className="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
             <div
               className="h-full bg-success transition-all"
-              style={{
-                width: `${totals.sales > 0 ? (totals.reconciled / totals.sales) * 100 : 0}%`,
-              }}
+              style={{ width: `${agendaProgress}%` }}
             />
           </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Compara servicios agendados no cancelados con pagos cobrados para esas citas.
+          </p>
         </div>
       </section>
 
@@ -400,7 +412,7 @@ function CajaPage() {
                 onToggle={() =>
                   setStatus.mutate({
                     id: p.id,
-                    status: p.status === "conciliado" ? "pendiente" : "conciliado",
+                    status: isCollectedPayment(p) ? "pendiente" : "conciliado",
                   })
                 }
               />
@@ -427,7 +439,7 @@ function CajaPage() {
                 queryKey: ["caja-payments", business?.id, accountingDate],
               });
               qc.invalidateQueries({
-                queryKey: ["caja-pending", business?.id, accountingDate],
+                queryKey: ["caja-appointments", business?.id, accountingDate],
               });
             }}
           />
@@ -481,6 +493,35 @@ function KpiCard({
   );
 }
 
+function CashSummaryRow({
+  label,
+  value,
+  tone,
+  bold,
+}: {
+  label: string;
+  value: string;
+  tone?: "info" | "destructive";
+  bold?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd
+        className={`tabular ${bold ? "text-sm font-semibold" : "text-xs font-medium"} ${
+          tone === "info"
+            ? "text-info"
+            : tone === "destructive"
+              ? "text-destructive"
+              : "text-foreground"
+        }`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function PaymentItem({
   p,
   staffName,
@@ -493,6 +534,7 @@ function PaymentItem({
   const Icon =
     p.method === "efectivo" ? Banknote : p.method === "transferencia" ? Send : CreditCard;
   const tip = getPaymentTipAmount(p);
+  const collected = isCollectedPayment(p);
   return (
     <li className="rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3">
       <div className="h-9 w-9 rounded-full bg-muted grid place-items-center shrink-0">
@@ -514,14 +556,20 @@ function PaymentItem({
       </div>
       <div className="text-right">
         <p className="text-sm font-semibold tabular">{clp(p.amount)}</p>
-        {tip > 0 && <p className="text-[10px] text-success tabular">+ {clp(tip)} propina</p>}
+        {tip > 0 && (
+          <p
+            className={`text-[10px] tabular ${collected ? "text-success" : "text-muted-foreground"}`}
+          >
+            {collected ? `+ ${clp(tip)} propina` : `${clp(tip)} propina pendiente`}
+          </p>
+        )}
         <button
           onClick={onToggle}
           className={`mt-0.5 text-[10px] font-medium px-2 py-0.5 rounded-full ${
-            p.status === "conciliado" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
+            collected ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
           }`}
         >
-          {p.status === "conciliado" ? "✓ Conciliado" : "Pendiente"}
+          {p.status === "parcial" ? "Pago parcial" : collected ? "✓ Cobrado" : "Pendiente"}
         </button>
       </div>
     </li>

@@ -46,10 +46,10 @@ export interface DayTotals {
   commissions: number; // Suma comisiones congeladas
   expenses: number;
   extraIncome: number;
-  cashOnHand: number; // efectivo + ingresos manuales − egresos
-  reconciled: number;
-  unreconciled: number;
-  profit: number; // sales − commissions − expenses
+  cashOnHand: number; // Cash service payments + cash tips + manual income - expenses
+  agendaExpected: number;
+  agendaCollected: number;
+  profit: number; // sales + manual income - commissions - expenses
   ivaEstimated: number; // ~19% sobre ventas (CL)
   count: number;
 }
@@ -78,28 +78,47 @@ export function encodePaymentNotes(notes: string, tipAmount: number): string | n
   return value.length > 0 ? value : null;
 }
 
+export function isCollectedPayment(payment: Pick<PaymentRow, "status">): boolean {
+  return payment.status !== "pendiente";
+}
+
 export function computeDayTotals(
   payments: PaymentRow[],
-  pendingApts: AppointmentLite[],
+  appointments: AppointmentLite[],
   movements: CashMovementRow[],
 ): DayTotals {
   const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-  const cash = sum(payments.filter((p) => p.method === "efectivo").map((p) => p.amount));
-  const transfer = sum(payments.filter((p) => p.method === "transferencia").map((p) => p.amount));
+  const collectedPayments = payments.filter(isCollectedPayment);
+  const cashPayments = collectedPayments.filter((p) => p.method === "efectivo");
+  const cash = sum(cashPayments.map((p) => p.amount));
+  const transfer = sum(
+    collectedPayments.filter((p) => p.method === "transferencia").map((p) => p.amount),
+  );
   const card = sum(
-    payments.filter((p) => p.method === "debito" || p.method === "credito").map((p) => p.amount),
+    collectedPayments
+      .filter((p) => p.method === "debito" || p.method === "credito")
+      .map((p) => p.amount),
   );
   const sales = cash + transfer + card;
-  const tips = sum(payments.map(getPaymentTipAmount));
+  const tips = sum(collectedPayments.map(getPaymentTipAmount));
+  const cashTips = sum(cashPayments.map(getPaymentTipAmount));
   const received = sales + tips;
-  const pending = sum(pendingApts.map((a) => a.price));
-  const commissions = sum(payments.map((p) => p.commission_amount ?? 0));
+  const activeAppointments = appointments.filter(
+    (appointment) => appointment.status !== "cancelado",
+  );
+  const appointmentIds = new Set(activeAppointments.map((appointment) => appointment.id));
+  const agendaExpected = sum(activeAppointments.map((appointment) => appointment.price));
+  const agendaCollected = sum(
+    collectedPayments
+      .filter((payment) => payment.appointment_id && appointmentIds.has(payment.appointment_id))
+      .map((payment) => payment.amount),
+  );
+  const pending = Math.max(agendaExpected - agendaCollected, 0);
+  const commissions = sum(collectedPayments.map((p) => p.commission_amount ?? 0));
   const expenses = sum(movements.filter((m) => m.kind === "egreso").map((m) => m.amount));
   const extraIncome = sum(movements.filter((m) => m.kind === "ingreso").map((m) => m.amount));
-  const reconciled = sum(payments.filter((p) => p.status === "conciliado").map((p) => p.amount));
-  const unreconciled = sum(payments.filter((p) => p.status !== "conciliado").map((p) => p.amount));
-  const cashOnHand = cash + extraIncome - expenses;
-  const profit = sales - commissions - expenses;
+  const cashOnHand = cash + cashTips + extraIncome - expenses;
+  const profit = sales + extraIncome - commissions - expenses;
   const ivaEstimated = Math.round((sales / 1.19) * 0.19);
 
   return {
@@ -114,11 +133,11 @@ export function computeDayTotals(
     expenses,
     extraIncome,
     cashOnHand,
-    reconciled,
-    unreconciled,
+    agendaExpected,
+    agendaCollected,
     profit,
     ivaEstimated,
-    count: payments.length,
+    count: collectedPayments.length,
   };
 }
 

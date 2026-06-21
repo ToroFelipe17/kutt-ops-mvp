@@ -9,7 +9,9 @@ import {
   accountingMonthRange,
   getPaymentDisplayNotes,
   getPaymentTipAmount,
+  isCollectedPayment,
   methodLabel,
+  type CashMovementRow,
   type PaymentRow,
 } from "@/lib/finance";
 import { toast } from "sonner";
@@ -62,28 +64,56 @@ function ExportPage() {
   });
   const staffMap = Object.fromEntries(staff.map((s) => [s.id, s.name]));
 
-  const sales = payments.reduce((s, p) => s + p.amount, 0);
-  const tips = payments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
+  const { data: movements = [] } = useQuery({
+    queryKey: ["exp-mov", business?.id, from],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("cash_movements")
+        .select("id,accounting_date,kind,amount,concept,created_at")
+        .eq("business_id", business!.id)
+        .gte("accounting_date", from)
+        .lte("accounting_date", to)
+        .order("accounting_date")
+        .order("created_at");
+      return (data ?? []) as CashMovementRow[];
+    },
+  });
+
+  const collectedPayments = payments.filter(isCollectedPayment);
+  const sales = collectedPayments.reduce((s, p) => s + p.amount, 0);
+  const tips = collectedPayments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
   const received = sales + tips;
-  const cash = payments.filter((p) => p.method === "efectivo").reduce((s, p) => s + p.amount, 0);
-  const transfer = payments
+  const cash = collectedPayments
+    .filter((p) => p.method === "efectivo")
+    .reduce((s, p) => s + p.amount, 0);
+  const transfer = collectedPayments
     .filter((p) => p.method === "transferencia")
     .reduce((s, p) => s + p.amount, 0);
-  const card = payments
+  const card = collectedPayments
     .filter((p) => p.method === "debito" || p.method === "credito")
     .reduce((s, p) => s + p.amount, 0);
-  const commissions = payments.reduce((s, p) => s + (p.commission_amount ?? 0), 0);
+  const commissions = collectedPayments.reduce((s, p) => s + (p.commission_amount ?? 0), 0);
+  const manualIncome = movements
+    .filter((movement) => movement.kind === "ingreso")
+    .reduce((sum, movement) => sum + movement.amount, 0);
+  const expenses = movements
+    .filter((movement) => movement.kind === "egreso")
+    .reduce((sum, movement) => sum + movement.amount, 0);
+  const netFlow = received + manualIncome - expenses;
 
   const downloadCSV = () => {
     const rows = [
       [
         "fecha",
-        "hora",
+        "hora_registro",
+        "tipo",
+        "categoria",
         "metodo",
         "estado",
-        "venta_clp",
+        "monto_clp",
         "propina_clp",
-        "total_recibido_clp",
+        "total_contable_clp",
         "barbero",
         "comision_pct",
         "comision_clp",
@@ -92,18 +122,40 @@ function ExportPage() {
       ...payments.map((p) => {
         const d = new Date(p.created_at);
         const tip = getPaymentTipAmount(p);
+        const collected = isCollectedPayment(p);
         return [
           p.accounting_date,
           d.toTimeString().slice(0, 5),
+          "pago_servicio",
+          "Servicio",
           methodLabel(p.method),
           p.status,
           String(p.amount),
           String(tip),
-          String(p.amount + tip),
+          String(collected ? p.amount + tip : 0),
           p.staff_id ? (staffMap[p.staff_id] ?? "") : "",
           p.commission_pct != null ? String(p.commission_pct) : "",
           p.commission_amount != null ? String(p.commission_amount) : "",
           getPaymentDisplayNotes(p.notes).replace(/[\n,;]/g, " "),
+        ];
+      }),
+      ...movements.map((movement) => {
+        const d = new Date(movement.created_at);
+        const signedAmount = movement.kind === "egreso" ? -movement.amount : movement.amount;
+        return [
+          movement.accounting_date,
+          d.toTimeString().slice(0, 5),
+          `${movement.kind}_manual`,
+          "Movimiento manual",
+          "",
+          "registrado",
+          String(movement.amount),
+          "0",
+          String(signedAmount),
+          "",
+          "",
+          "",
+          movement.concept.replace(/[\n,;]/g, " "),
         ];
       }),
     ];
@@ -143,8 +195,11 @@ function ExportPage() {
   <div class="card"><div class="l">Total ventas</div><div class="v">${clp(sales)}</div></div>
   <div class="card"><div class="l">Propinas</div><div class="v">${clp(tips)}</div></div>
   <div class="card"><div class="l">Total recibido</div><div class="v">${clp(received)}</div></div>
+  <div class="card"><div class="l">Ingresos manuales</div><div class="v">${clp(manualIncome)}</div></div>
+  <div class="card"><div class="l">Egresos</div><div class="v">${clp(expenses)}</div></div>
+  <div class="card"><div class="l">Flujo neto</div><div class="v">${clp(netFlow)}</div></div>
   <div class="card"><div class="l">Comisiones</div><div class="v">${clp(commissions)}</div></div>
-  <div class="card"><div class="l">N° transacciones</div><div class="v">${payments.length}</div></div>
+  <div class="card"><div class="l">Cobros</div><div class="v">${collectedPayments.length}</div></div>
 </div>
 <h2>Por método</h2>
 <table>
@@ -160,7 +215,19 @@ function ExportPage() {
     .map((p) => {
       const d = new Date(p.created_at);
       const tip = getPaymentTipAmount(p);
-      return `<tr><td>${formatAccountingDate(p.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(p.amount + tip)}</td></tr>`;
+      const total = isCollectedPayment(p) ? p.amount + tip : 0;
+      return `<tr><td>${formatAccountingDate(p.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(total)}</td></tr>`;
+    })
+    .join("")}
+</table>
+<h2>Movimientos manuales</h2>
+<table>
+  <tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th class="right">Monto</th></tr>
+  ${movements
+    .map((movement) => {
+      const d = new Date(movement.created_at);
+      const sign = movement.kind === "egreso" ? "−" : "+";
+      return `<tr><td>${formatAccountingDate(movement.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${movement.kind}</td><td>${movement.concept}</td><td class="right">${sign} ${clp(movement.amount)}</td></tr>`;
     })
     .join("")}
 </table>
@@ -205,8 +272,11 @@ function ExportPage() {
         <Card label="Ventas" value={clp(sales)} />
         <Card label="Propinas" value={clp(tips)} />
         <Card label="Recibido" value={clp(received)} />
+        <Card label="Ingresos manuales" value={clp(manualIncome)} />
+        <Card label="Egresos" value={clp(expenses)} />
+        <Card label="Flujo neto" value={clp(netFlow)} />
         <Card label="Comisiones" value={clp(commissions)} />
-        <Card label="Transacciones" value={String(payments.length)} />
+        <Card label="Cobros" value={String(collectedPayments.length)} />
       </section>
 
       <section className="px-5 mt-5 space-y-2">
@@ -225,7 +295,7 @@ function ExportPage() {
       </section>
 
       <p className="mt-6 px-8 text-[11px] text-muted-foreground text-center">
-        Listo para entregar a tu contador. Incluye método, barbero, estado y comisión por pago.
+        Incluye cobros, estados, comisiones, ingresos manuales y egresos por fecha contable.
       </p>
     </div>
   );
