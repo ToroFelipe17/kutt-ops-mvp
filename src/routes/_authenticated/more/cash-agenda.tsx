@@ -102,6 +102,16 @@ function CashAgendaDetailPage() {
     () => Object.fromEntries(staff.map((member) => [member.id, member.name])),
     [staff],
   );
+  const orderedAppointments = useMemo(
+    () =>
+      [...appointments].sort((a, b) => {
+        const aPending = a.price - (collectedByAppointment.get(a.id) ?? 0) > 0;
+        const bPending = b.price - (collectedByAppointment.get(b.id) ?? 0) > 0;
+        if (aPending !== bPending) return aPending ? -1 : 1;
+        return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
+      }),
+    [appointments, collectedByAppointment],
+  );
   const progress =
     totals.agendaExpected > 0
       ? Math.min(100, Math.round((totals.agendaCollected / totals.agendaExpected) * 100))
@@ -172,15 +182,17 @@ function CashAgendaDetailPage() {
       <section className="mt-6 px-5">
         <div className="mb-2 flex items-center justify-between px-1">
           <h2 className="text-[11px] uppercase tracking-widest text-muted-foreground">Citas</h2>
-          <span className="text-[10px] tabular text-muted-foreground">{appointments.length}</span>
+          <span className="text-[10px] tabular text-muted-foreground">
+            {orderedAppointments.length}
+          </span>
         </div>
-        {appointments.length === 0 ? (
+        {orderedAppointments.length === 0 ? (
           <p className="rounded-2xl bg-surface px-4 py-8 text-center text-sm text-muted-foreground hairline">
             No hay citas no canceladas para esta fecha.
           </p>
         ) : (
           <ul className="space-y-2">
-            {appointments.map((appointment) => {
+            {orderedAppointments.map((appointment) => {
               const collected = collectedByAppointment.get(appointment.id) ?? 0;
               const missing = Math.max(appointment.price - collected, 0);
               const hasAmount = appointment.price > 0;

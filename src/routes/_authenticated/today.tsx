@@ -132,6 +132,7 @@ function Today() {
 
   const updateStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: AppointmentStatus }) => {
+      // TODO(Phase 2C): Paid cancellations need an audited payment reversal, not only a status update.
       const { error } = await supabase.from("appointments").update({ status }).eq("id", id);
       if (error) throw error;
     },

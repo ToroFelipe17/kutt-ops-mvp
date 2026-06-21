@@ -12,9 +12,11 @@ import {
   ChevronRight,
   ChevronUp,
   CreditCard,
+  MoreHorizontal,
   Plus,
   Receipt,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -76,7 +78,7 @@ function CajaPage() {
         )
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data as PaymentRow[];
     },
@@ -107,7 +109,7 @@ function CajaPage() {
         .select("id,accounting_date,kind,amount,concept,created_at")
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as CashMovementRow[];
     },
@@ -225,7 +227,7 @@ function CajaPage() {
         const aTime = a.appointment_id ? appointmentTimeById[a.appointment_id] : null;
         const bTime = b.appointment_id ? appointmentTimeById[b.appointment_id] : null;
         return (
-          new Date(aTime ?? a.created_at).getTime() - new Date(bTime ?? b.created_at).getTime()
+          new Date(bTime ?? b.created_at).getTime() - new Date(aTime ?? a.created_at).getTime()
         );
       }),
     [appointmentTimeById, payments],
@@ -254,6 +256,24 @@ function CajaPage() {
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, accountingDate] }),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const deleteMovement = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("cash_movements")
+        .delete()
+        .eq("id", id)
+        .eq("business_id", business!.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Movimiento eliminado");
+      qc.invalidateQueries({ queryKey: ["caja-mov", business?.id, accountingDate] });
+      qc.invalidateQueries({ queryKey: ["close-mov", business?.id] });
+      qc.invalidateQueries({ queryKey: ["exp-mov", business?.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Error"),
   });
 
   return (
@@ -330,9 +350,11 @@ function CajaPage() {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-surface-elevated via-surface to-background p-6 hairline"
+          className="relative isolate rounded-3xl bg-gradient-to-br from-surface-elevated via-surface to-background p-6 hairline"
         >
-          <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-success/10 blur-3xl pointer-events-none" />
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl [clip-path:inset(0_round_1.5rem)]">
+            <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-success/10 blur-3xl" />
+          </div>
           <div className="relative">
             <p className="text-xs text-muted-foreground">Ventas del día</p>
             <p className="mt-1 text-[44px] leading-none font-semibold tracking-tight tabular">
@@ -479,7 +501,11 @@ function CajaPage() {
           onToggle={() => setShowAllMovements((value) => !value)}
         >
           {visibleMovements.map((movement) => (
-            <MovementItem key={movement.id} m={movement} />
+            <MovementItem
+              key={movement.id}
+              m={movement}
+              onDelete={() => deleteMovement.mutate(movement.id)}
+            />
           ))}
         </MovementGroup>
       </div>
@@ -708,33 +734,71 @@ function PaymentItem({
   );
 }
 
-function MovementItem({ m }: { m: CashMovementRow }) {
+function MovementItem({ m, onDelete }: { m: CashMovementRow; onDelete: () => void }) {
   // TODO(Phase 2C): Add audited reversal records before exposing movement annulment.
   const isOut = m.kind === "egreso";
+  const [deleteRevealed, setDeleteRevealed] = useState(false);
+
+  const confirmDelete = () => {
+    if (!window.confirm("¿Seguro que quieres eliminar este movimiento?")) return;
+    setDeleteRevealed(false);
+    onDelete();
+  };
+
   return (
-    <li className="rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3">
-      <div
-        className={`h-9 w-9 rounded-full grid place-items-center shrink-0 ${
-          isOut ? "bg-destructive/15 text-destructive" : "bg-info/15 text-info"
-        }`}
+    <li className="relative overflow-hidden rounded-xl bg-destructive/20">
+      <button
+        type="button"
+        onClick={confirmDelete}
+        className="absolute inset-y-0 right-0 flex w-24 flex-col items-center justify-center gap-1 bg-destructive/75 text-xs font-medium text-white backdrop-blur-sm"
       >
-        {isOut ? <ArrowDownRight className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{m.concept}</p>
-        <p className="text-[11px] text-muted-foreground">
-          {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso manual"}
-        </p>
-      </div>
-      <div className="text-right">
-        <p className={`text-sm font-semibold tabular ${isOut ? "text-destructive" : "text-info"}`}>
-          {isOut ? "−" : "+"}
-          {clp(m.amount)}
-        </p>
-        <span className="mt-0.5 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-          Registrado
-        </span>
-      </div>
+        <Trash2 className="h-4 w-4" /> Eliminar
+      </button>
+      <motion.div
+        drag="x"
+        dragConstraints={{ left: -96, right: 0 }}
+        dragDirectionLock
+        dragElastic={0.04}
+        dragMomentum={false}
+        animate={{ x: deleteRevealed ? -96 : 0 }}
+        onDragEnd={(_, info) => setDeleteRevealed(info.offset.x < -40)}
+        style={{ touchAction: "pan-y" }}
+        className="relative z-10 flex items-center gap-3 rounded-xl bg-surface px-3.5 py-3 hairline"
+      >
+        <div
+          className={`h-9 w-9 rounded-full grid place-items-center shrink-0 ${
+            isOut ? "bg-destructive/15 text-destructive" : "bg-info/15 text-info"
+          }`}
+        >
+          {isOut ? <ArrowDownRight className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{m.concept}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso manual"}
+          </p>
+        </div>
+        <div className="text-right">
+          <p
+            className={`text-sm font-semibold tabular ${isOut ? "text-destructive" : "text-info"}`}
+          >
+            {isOut ? "−" : "+"}
+            {clp(m.amount)}
+          </p>
+          <span className="mt-0.5 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            Registrado
+          </span>
+        </div>
+        <button
+          type="button"
+          aria-label="Mostrar acción para eliminar movimiento"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => setDeleteRevealed((value) => !value)}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </motion.div>
     </li>
   );
 }
