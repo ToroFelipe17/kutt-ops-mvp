@@ -58,6 +58,7 @@ function CajaPage() {
   const { business } = useBusiness();
   const qc = useQueryClient();
   const [accountingDate, setAccountingDate] = useState(() => localDateKey());
+  // TODO(Phase 2): Add week aggregation once all cash queries share a tested range model.
   const selectedDate = useMemo(() => parseLocalDateKey(accountingDate), [accountingDate]);
   const [from, to] = dayRange(selectedDate);
   const isToday = accountingDate === localDateKey();
@@ -236,26 +237,28 @@ function CajaPage() {
       </header>
 
       <section className="px-5 pb-3">
-        <div className="h-12 rounded-xl bg-surface hairline flex items-center gap-1 p-1">
+        <div className="grid min-h-12 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem_auto] items-center gap-1 rounded-xl border border-border/70 bg-surface p-1 shadow-sm">
           <button
             type="button"
             title="Día anterior"
+            aria-label="Ver día anterior"
             onClick={() => setAccountingDate((current) => shiftLocalDateKey(current, -1))}
-            className="h-10 w-10 rounded-lg grid place-items-center text-muted-foreground active:scale-95 transition-transform"
+            className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <div className="flex-1 min-w-0 text-center">
-            <p className="text-sm font-medium capitalize truncate">
+          <div className="min-w-0 rounded-lg border border-border/60 bg-background px-2 py-2 text-center">
+            <p className="truncate text-sm font-medium capitalize leading-5">
               {formatAccountingDateLabel(accountingDate)}
             </p>
           </div>
           <button
             type="button"
             title="Día siguiente"
+            aria-label="Ver día siguiente"
             onClick={() => setAccountingDate((current) => shiftLocalDateKey(current, 1))}
             disabled={isToday}
-            className="h-10 w-10 rounded-lg grid place-items-center text-muted-foreground active:scale-95 transition-transform disabled:opacity-30"
+            className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted active:bg-muted disabled:pointer-events-none disabled:opacity-30"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -263,7 +266,11 @@ function CajaPage() {
             type="button"
             onClick={() => setAccountingDate(localDateKey())}
             disabled={isToday}
-            className="h-10 px-3 rounded-lg bg-background hairline text-xs font-medium active:scale-[0.98] transition-transform disabled:opacity-40"
+            className={`h-10 rounded-lg border px-3 text-xs font-medium transition-colors ${
+              isToday
+                ? "border-success/20 bg-success/10 text-success"
+                : "border-border/70 bg-background text-foreground hover:bg-muted active:bg-muted"
+            }`}
           >
             Hoy
           </button>
@@ -586,18 +593,15 @@ function NewMovementSheet({
   const hasValidAmount = serviceAmount > 0;
   const hasValidAccountingDate = /^\d{4}-\d{2}-\d{2}$/.test(accountingDate);
   const submitDisabled =
-    saving || !hasValidAmount || !hasValidAccountingDate || (!isService && !concept.trim());
+    saving ||
+    !hasValidAmount ||
+    !hasValidAccountingDate ||
+    (isService ? !selectedService || !staffId : !concept.trim());
   const filteredClients = useMemo(() => {
     if (!clientName.trim()) return recentClients.slice(0, 5);
     const query = clientName.toLowerCase();
     return recentClients.filter((client) => client.name.toLowerCase().includes(query)).slice(0, 5);
   }, [clientName, recentClients]);
-
-  useEffect(() => {
-    if (!isService || serviceId || !services[0]) return;
-    setServiceId(services[0].id);
-    setAmount(String(services[0].price));
-  }, [isService, serviceId, services]);
 
   useEffect(() => {
     if (!staffId && staff[0]) setStaffId(staff[0].id);
@@ -807,63 +811,58 @@ function NewMovementSheet({
               value={accountingDate}
               type="date"
               onChange={updateAccountingDate}
+              hint="Este movimiento se incluirá en la caja de esta fecha."
             />
           </div>
 
-          <div className="mt-4 rounded-2xl bg-background/50 hairline p-4 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              {isService ? "Monto del servicio" : "Monto"}
-            </p>
-            <input
-              autoFocus
-              inputMode="numeric"
-              placeholder="$0"
-              value={amount ? clp(parseCurrencyInput(amount)) : ""}
-              onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
-              className="mt-1 w-full bg-transparent text-3xl font-semibold tabular text-center outline-none border-0"
-            />
-            {isService && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Este valor se guarda como venta del servicio. La propina se suma aparte.
-              </p>
-            )}
-          </div>
+          {!isService && (
+            <div className="mt-4 rounded-2xl border border-border/70 bg-background/50 p-4 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Monto</p>
+              <input
+                autoFocus
+                inputMode="numeric"
+                placeholder="$0"
+                value={amount ? clp(parseCurrencyInput(amount)) : ""}
+                onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
+                className="mt-1 w-full border-0 bg-transparent text-center text-3xl font-semibold tabular outline-none"
+              />
+            </div>
+          )}
 
           {isService ? (
-            hasValidAmount || services.length > 0 ? (
+            services.length > 0 ? (
               <div className="mt-4 space-y-4">
                 <div>
                   <p className="text-xs text-muted-foreground px-1">Servicio</p>
-                  {services.length === 0 ? (
-                    <p className="mt-2 rounded-xl bg-background hairline p-3 text-xs text-muted-foreground">
-                      Crea servicios en Ajustes para elegirlos aquí.
-                    </p>
-                  ) : (
-                    <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                      {services.map((service) => (
-                        <button
-                          key={service.id}
-                          type="button"
-                          onClick={() => {
-                            setServiceId(service.id);
-                            setAmount(String(service.price));
-                          }}
-                          className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
-                            service.id === serviceId
-                              ? "bg-foreground text-background"
-                              : "bg-background"
-                          }`}
-                        >
-                          {service.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                    {services.map((service) => (
+                      <button
+                        key={service.id}
+                        type="button"
+                        onClick={() => {
+                          setServiceId(service.id);
+                          setAmount(String(service.price));
+                        }}
+                        className={`shrink-0 px-3 h-10 rounded-full hairline text-xs font-medium ${
+                          service.id === serviceId
+                            ? "bg-foreground text-background"
+                            : "bg-background"
+                        }`}
+                      >
+                        {service.name}
+                      </button>
+                    ))}
+                  </div>
                   {selectedService && (
-                    <p className="mt-2 text-[11px] text-muted-foreground px-1">
-                      Precio guardado: {clp(selectedService.price)}. Este cobro usa{" "}
-                      {clp(serviceAmount)}.
-                    </p>
+                    <div className="mt-3 flex items-center justify-between rounded-xl border border-border/70 bg-background/50 p-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Monto del servicio</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          La propina se suma por separado.
+                        </p>
+                      </div>
+                      <span className="text-base font-semibold tabular">{clp(serviceAmount)}</span>
+                    </div>
                   )}
                 </div>
 
@@ -980,7 +979,7 @@ function NewMovementSheet({
               </div>
             ) : (
               <div className="mt-4 rounded-xl bg-warning/10 text-warning hairline p-3 text-xs">
-                Ingresa un monto válido para continuar con el servicio.
+                Crea servicios en Ajustes para registrar un servicio desde Caja.
               </div>
             )
           ) : (
@@ -1041,14 +1040,16 @@ function DateTimeInput({
   value,
   type,
   onChange,
+  hint,
 }: {
   label: string;
   value: string;
   type: "date" | "time";
   onChange: (value: string) => void;
+  hint?: string;
 }) {
   return (
-    <label className="rounded-xl bg-background hairline p-3">
+    <label className="block min-w-0 rounded-xl border border-border/70 bg-background p-3">
       <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
@@ -1056,8 +1057,11 @@ function DateTimeInput({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full bg-transparent text-sm font-medium outline-none"
+        className="mt-1 block min-w-0 max-w-full w-full bg-transparent text-sm font-medium text-foreground outline-none"
       />
+      {hint && (
+        <span className="mt-1.5 block text-[11px] leading-4 text-muted-foreground">{hint}</span>
+      )}
     </label>
   );
 }
