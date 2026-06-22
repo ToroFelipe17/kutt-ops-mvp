@@ -115,6 +115,21 @@ function CajaPage() {
     },
   });
 
+  const { data: dailyReport } = useQuery({
+    queryKey: ["caja-report", business?.id, accountingDate],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("daily_closes")
+        .select("cash_counted,cash_diff")
+        .eq("business_id", business!.id)
+        .eq("close_date", accountingDate)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const { data: staff = [] } = useQuery({
     queryKey: ["caja-staff", business?.id],
     enabled: !!business?.id,
@@ -287,6 +302,7 @@ function CajaPage() {
         </div>
         <Link
           to="/more/close"
+          search={{ date: accountingDate }}
           className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground active:text-foreground"
         >
           Ver informe <ChevronRight className="w-3.5 h-3.5" />
@@ -407,6 +423,20 @@ function CajaPage() {
           <CashSummaryRow label="Ingresos manuales" value={clp(totals.extraIncome)} tone="info" />
           <CashSummaryRow label="Egresos" value={`− ${clp(totals.expenses)}`} tone="destructive" />
           <CashSummaryRow label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
+          {dailyReport?.cash_counted != null && (
+            <CashSummaryRow
+              label="Informe diario"
+              value={formatCashDifferenceStatus(dailyReport.cash_diff)}
+              tone={
+                dailyReport.cash_diff === 0
+                  ? "success"
+                  : dailyReport.cash_diff > 0
+                    ? "info"
+                    : "destructive"
+              }
+              bold
+            />
+          )}
         </dl>
       </section>
 
@@ -657,7 +687,7 @@ function CashSummaryRow({
 }: {
   label: string;
   value: string;
-  tone?: "info" | "destructive";
+  tone?: "success" | "info" | "destructive";
   bold?: boolean;
 }) {
   return (
@@ -665,17 +695,26 @@ function CashSummaryRow({
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd
         className={`tabular ${bold ? "text-sm font-semibold" : "text-xs font-medium"} ${
-          tone === "info"
-            ? "text-info"
-            : tone === "destructive"
-              ? "text-destructive"
-              : "text-foreground"
+          tone === "success"
+            ? "text-success"
+            : tone === "info"
+              ? "text-info"
+              : tone === "destructive"
+                ? "text-destructive"
+                : "text-foreground"
         }`}
       >
         {value}
       </dd>
     </div>
   );
+}
+
+function formatCashDifferenceStatus(difference: number): string {
+  if (difference === 0) return "Caja cuadrada";
+  return difference > 0
+    ? `Sobran ${clp(Math.abs(difference))}`
+    : `Faltan ${clp(Math.abs(difference))}`;
 }
 
 function PaymentItem({

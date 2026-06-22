@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, CheckCircle2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -11,6 +11,15 @@ import { computeDayTotals, dayRange, type CashMovementRow, type PaymentRow } fro
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/close")({
+  validateSearch: (search: Record<string, unknown>): { date?: string } => {
+    const today = localDateKey();
+    const requestedDate =
+      typeof search.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
+        ? search.date
+        : undefined;
+
+    return requestedDate && requestedDate <= today ? { date: requestedDate } : {};
+  },
   component: ClosePage,
 });
 
@@ -18,8 +27,9 @@ function ClosePage() {
   const { business } = useBusiness();
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [from, to] = dayRange();
-  const accountingDate = localDateKey();
+  const { date } = Route.useSearch();
+  const accountingDate = date ?? localDateKey();
+  const [from, to] = dayRange(parseLocalDate(accountingDate));
   // TODO(Phase 2C): Create automatic snapshots after midnight in America/Santiago.
   const [counted, setCounted] = useState("");
 
@@ -84,8 +94,14 @@ function ClosePage() {
     () => computeDayTotals(payments, appointments, movements),
     [payments, appointments, movements],
   );
-  const countedNum = parseInt(counted.replace(/\D/g, ""), 10) || 0;
-  const diff = countedNum > 0 ? countedNum - totals.cashOnHand : 0;
+  const hasCountedCash = counted.trim() !== "";
+  const countedNum = hasCountedCash ? parseInt(counted.replace(/\D/g, ""), 10) || 0 : null;
+  const diff = countedNum === null ? null : countedNum - totals.cashOnHand;
+  const adjustedResult = diff === null ? null : totals.profit + diff;
+
+  useEffect(() => {
+    setCounted(existing?.cash_counted == null ? "" : String(existing.cash_counted));
+  }, [accountingDate, existing?.cash_counted]);
 
   const close = useMutation({
     mutationFn: async () => {
@@ -100,8 +116,8 @@ function ClosePage() {
         total_pending: totals.pending,
         total_commissions: totals.commissions,
         total_expenses: totals.expenses,
-        cash_counted: countedNum > 0 ? countedNum : null,
-        cash_diff: diff,
+        cash_counted: countedNum,
+        cash_diff: diff ?? 0,
         iva_estimated: totals.ivaEstimated,
         profit_estimated: totals.profit,
         closed_by: user?.id ?? null,
@@ -114,6 +130,8 @@ function ClosePage() {
     onSuccess: () => {
       toast.success(existing ? "Informe actualizado" : "Informe guardado");
       qc.invalidateQueries({ queryKey: ["close-existing", business?.id, accountingDate] });
+      qc.invalidateQueries({ queryKey: ["caja-report", business?.id, accountingDate] });
+      qc.invalidateQueries({ queryKey: ["exp-close", business?.id] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
@@ -132,7 +150,7 @@ function ClosePage() {
             Informe diario
           </p>
           <h1 className="text-xl font-semibold tracking-tight capitalize">
-            {new Date().toLocaleDateString("es-CL", {
+            {parseLocalDate(accountingDate).toLocaleDateString("es-CL", {
               weekday: "long",
               day: "numeric",
               month: "short",
@@ -159,23 +177,17 @@ function ClosePage() {
             <Row label="Por cobrar" value={clp(totals.pending)} tone="warning" />
             <Row label="Comisiones" value={`− ${clp(totals.commissions)}`} />
             <Row label="Egresos" value={`− ${clp(totals.expenses)}`} />
-            <Row label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
+            <Row label="Efectivo esperado estimado" value={clp(totals.cashOnHand)} bold />
             <Row label="IVA estimado" value={clp(totals.ivaEstimated)} />
-            <Row
-              label="Utilidad estimada"
-              value={clp(totals.profit)}
-              bold
-              tone={totals.profit >= 0 ? "success" : "destructive"}
-            />
           </dl>
         </motion.div>
       </section>
 
       <section className="px-5 mt-4">
         <div className="rounded-2xl bg-surface hairline p-4">
-          <p className="text-xs text-muted-foreground">Conteo de efectivo</p>
+          <p className="text-xs font-medium">Efectivo contado</p>
           <div className="mt-2 flex items-baseline justify-between">
-            <p className="text-xs text-muted-foreground">Esperado</p>
+            <p className="text-xs text-muted-foreground">Efectivo esperado</p>
             <p className="text-sm font-medium tabular">{clp(totals.cashOnHand)}</p>
           </div>
           <input
@@ -185,17 +197,68 @@ function ClosePage() {
             onChange={(e) => setCounted(e.target.value.replace(/\D/g, ""))}
             className="mt-3 w-full h-12 px-4 rounded-xl bg-background hairline text-sm tabular outline-none focus:border-border-strong"
           />
-          {countedNum > 0 && (
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">Diferencia</p>
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            Los movimientos manuales se consideran efectivo hasta que admitan método de pago.
+          </p>
+          {diff !== null && (
+            <div
+              className={`mt-4 rounded-xl px-3.5 py-3 ${
+                diff === 0 ? "bg-success/10" : diff > 0 ? "bg-info/10" : "bg-destructive/10"
+              }`}
+            >
               <p
-                className={`text-sm font-semibold tabular ${diff === 0 ? "text-success" : diff > 0 ? "text-info" : "text-destructive"}`}
+                className={`text-sm font-semibold ${
+                  diff === 0 ? "text-success" : diff > 0 ? "text-info" : "text-destructive"
+                }`}
               >
-                {diff > 0 ? "+" : ""}
-                {clp(diff)}
+                {diff === 0
+                  ? "Caja cuadrada"
+                  : diff > 0
+                    ? `Sobran ${clp(Math.abs(diff))}`
+                    : `Faltan ${clp(Math.abs(diff))}`}
               </p>
+              <div className="mt-2 flex items-center justify-between gap-4">
+                <p className="text-xs text-muted-foreground">Diferencia de caja</p>
+                <p className="text-sm font-semibold tabular">
+                  {diff > 0 ? "+" : ""}
+                  {clp(diff)}
+                </p>
+              </div>
             </div>
           )}
+        </div>
+      </section>
+
+      <section className="px-5 mt-4">
+        <div className="rounded-2xl bg-surface hairline px-4">
+          <dl className="divide-y divide-border">
+            <Row
+              label="Utilidad estimada"
+              value={clp(totals.profit)}
+              bold
+              tone={totals.profit >= 0 ? "success" : "destructive"}
+            />
+            <Row
+              label="Diferencia de caja"
+              value={diff === null ? "Sin conteo" : `${diff > 0 ? "+" : ""}${clp(diff)}`}
+              tone={diff === null || diff === 0 ? undefined : diff > 0 ? "info" : "destructive"}
+            />
+            <Row
+              label="Resultado ajustado"
+              value={adjustedResult === null ? "Sin conteo" : clp(adjustedResult)}
+              bold
+              tone={
+                adjustedResult === null
+                  ? undefined
+                  : adjustedResult >= 0
+                    ? "success"
+                    : "destructive"
+              }
+            />
+          </dl>
+          <p className="pb-4 pt-1 text-[11px] leading-relaxed text-muted-foreground">
+            El resultado ajustado suma la diferencia operativa al cálculo original de utilidad.
+          </p>
         </div>
       </section>
 
@@ -231,16 +294,18 @@ function Row({
   label: string;
   value: string;
   bold?: boolean;
-  tone?: "success" | "warning" | "destructive";
+  tone?: "success" | "warning" | "destructive" | "info";
 }) {
   const c =
     tone === "success"
       ? "text-success"
       : tone === "warning"
         ? "text-warning"
-        : tone === "destructive"
-          ? "text-destructive"
-          : "text-foreground";
+        : tone === "info"
+          ? "text-info"
+          : tone === "destructive"
+            ? "text-destructive"
+            : "text-foreground";
   return (
     <div className="py-2.5 flex items-center justify-between">
       <dt className="text-sm text-muted-foreground">{label}</dt>
@@ -249,4 +314,9 @@ function Row({
       </dd>
     </div>
   );
+}
+
+function parseLocalDate(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
 }

@@ -25,6 +25,15 @@ interface StaffRow {
   name: string;
 }
 
+interface DailyCloseRow {
+  close_date: string;
+  total_cash: number;
+  cash_counted: number | null;
+  cash_diff: number;
+  profit_estimated: number;
+  created_at: string;
+}
+
 function ExportPage() {
   const { business } = useBusiness();
   const [offset, setOffset] = useState(0);
@@ -80,6 +89,22 @@ function ExportPage() {
     },
   });
 
+  const { data: dailyCloses = [] } = useQuery({
+    queryKey: ["exp-close", business?.id, from],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("daily_closes")
+        .select("close_date,total_cash,cash_counted,cash_diff,profit_estimated,created_at")
+        .eq("business_id", business!.id)
+        .gte("close_date", from)
+        .lte("close_date", to)
+        .order("close_date");
+      if (error) throw error;
+      return (data ?? []) as DailyCloseRow[];
+    },
+  });
+
   const collectedPayments = payments.filter(isCollectedPayment);
   const sales = collectedPayments.reduce((s, p) => s + p.amount, 0);
   const tips = collectedPayments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
@@ -118,6 +143,10 @@ function ExportPage() {
         "comision_pct",
         "comision_clp",
         "notas",
+        "efectivo_esperado_clp",
+        "efectivo_contado_clp",
+        "diferencia_caja_clp",
+        "resultado_ajustado_clp",
       ],
       ...payments.map((p) => {
         const d = new Date(p.created_at);
@@ -137,6 +166,10 @@ function ExportPage() {
           p.commission_pct != null ? String(p.commission_pct) : "",
           p.commission_amount != null ? String(p.commission_amount) : "",
           getPaymentDisplayNotes(p.notes).replace(/[\n,;]/g, " "),
+          "",
+          "",
+          "",
+          "",
         ];
       }),
       ...movements.map((movement) => {
@@ -156,6 +189,32 @@ function ExportPage() {
           "",
           "",
           movement.concept.replace(/[\n,;]/g, " "),
+          "",
+          "",
+          "",
+          "",
+        ];
+      }),
+      ...dailyCloses.map((report) => {
+        const createdAt = new Date(report.created_at);
+        return [
+          report.close_date,
+          createdAt.toTimeString().slice(0, 5),
+          "informe_diario",
+          "Informe diario",
+          "",
+          "guardado",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          String(report.total_cash),
+          report.cash_counted == null ? "" : String(report.cash_counted),
+          report.cash_counted == null ? "" : String(report.cash_diff),
+          report.cash_counted == null ? "" : String(report.profit_estimated + report.cash_diff),
         ];
       }),
     ];
@@ -207,6 +266,20 @@ function ExportPage() {
   <tr><td>Efectivo</td><td class="right">${clp(cash)}</td></tr>
   <tr><td>Transferencia</td><td class="right">${clp(transfer)}</td></tr>
   <tr><td>Tarjeta</td><td class="right">${clp(card)}</td></tr>
+</table>
+<h2>Informes diarios</h2>
+<table>
+  <tr><th>Fecha</th><th class="right">Esperado</th><th class="right">Contado</th><th class="right">Diferencia</th><th class="right">Resultado ajustado</th></tr>
+  ${
+    dailyCloses.length > 0
+      ? dailyCloses
+          .map(
+            (report) =>
+              `<tr><td>${formatAccountingDate(report.close_date)}</td><td class="right">${clp(report.total_cash)}</td><td class="right">${report.cash_counted == null ? "Sin conteo" : clp(report.cash_counted)}</td><td class="right">${report.cash_counted == null ? "—" : `${report.cash_diff > 0 ? "+" : ""}${clp(report.cash_diff)}`}</td><td class="right">${report.cash_counted == null ? "—" : clp(report.profit_estimated + report.cash_diff)}</td></tr>`,
+          )
+          .join("")
+      : '<tr><td colspan="5">Sin informes guardados para este período.</td></tr>'
+  }
 </table>
 <h2>Detalle</h2>
 <table>
@@ -295,7 +368,7 @@ function ExportPage() {
       </section>
 
       <p className="mt-6 px-8 text-[11px] text-muted-foreground text-center">
-        Incluye cobros, estados, comisiones, ingresos manuales y egresos por fecha contable.
+        Incluye cobros, movimientos e informes diarios guardados por fecha contable.
       </p>
     </div>
   );
