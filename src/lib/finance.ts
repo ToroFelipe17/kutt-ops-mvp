@@ -32,6 +32,7 @@ export interface CashMovementRow {
   kind: "ingreso" | "egreso";
   amount: number;
   concept: string;
+  method: PaymentMethod;
   created_at: string;
 }
 
@@ -46,7 +47,9 @@ export interface DayTotals {
   commissions: number; // Suma comisiones congeladas
   expenses: number;
   extraIncome: number;
-  cashOnHand: number; // Cash service payments + cash tips + manual income - expenses
+  manualCashIncome: number;
+  manualCashExpenses: number;
+  cashOnHand: number; // Cash service payments + cash tips + manual cash income - manual cash expenses
   agendaExpected: number;
   agendaCollected: number;
   profit: number; // sales + manual income - commissions - expenses
@@ -117,7 +120,13 @@ export function computeDayTotals(
   const commissions = sum(collectedPayments.map((p) => p.commission_amount ?? 0));
   const expenses = sum(movements.filter((m) => m.kind === "egreso").map((m) => m.amount));
   const extraIncome = sum(movements.filter((m) => m.kind === "ingreso").map((m) => m.amount));
-  const cashOnHand = cash + cashTips + extraIncome - expenses;
+  const manualCashIncome = sum(
+    movements.filter((m) => m.kind === "ingreso" && m.method === "efectivo").map((m) => m.amount),
+  );
+  const manualCashExpenses = sum(
+    movements.filter((m) => m.kind === "egreso" && m.method === "efectivo").map((m) => m.amount),
+  );
+  const cashOnHand = cash + cashTips + manualCashIncome - manualCashExpenses;
   const profit = sales + extraIncome - commissions - expenses;
   const ivaEstimated = Math.round((sales / 1.19) * 0.19);
 
@@ -132,6 +141,8 @@ export function computeDayTotals(
     commissions,
     expenses,
     extraIncome,
+    manualCashIncome,
+    manualCashExpenses,
     cashOnHand,
     agendaExpected,
     agendaCollected,

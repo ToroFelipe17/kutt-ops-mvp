@@ -79,7 +79,7 @@ function ExportPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("cash_movements")
-        .select("id,accounting_date,kind,amount,concept,created_at")
+        .select("id,accounting_date,kind,amount,concept,method,created_at")
         .eq("business_id", business!.id)
         .gte("accounting_date", from)
         .lte("accounting_date", to)
@@ -112,6 +112,9 @@ function ExportPage() {
   const cash = collectedPayments
     .filter((p) => p.method === "efectivo")
     .reduce((s, p) => s + p.amount, 0);
+  const cashTips = collectedPayments
+    .filter((p) => p.method === "efectivo")
+    .reduce((s, p) => s + getPaymentTipAmount(p), 0);
   const transfer = collectedPayments
     .filter((p) => p.method === "transferencia")
     .reduce((s, p) => s + p.amount, 0);
@@ -125,6 +128,13 @@ function ExportPage() {
   const expenses = movements
     .filter((movement) => movement.kind === "egreso")
     .reduce((sum, movement) => sum + movement.amount, 0);
+  const manualCashIncome = movements
+    .filter((movement) => movement.kind === "ingreso" && movement.method === "efectivo")
+    .reduce((sum, movement) => sum + movement.amount, 0);
+  const manualCashExpenses = movements
+    .filter((movement) => movement.kind === "egreso" && movement.method === "efectivo")
+    .reduce((sum, movement) => sum + movement.amount, 0);
+  const expectedCash = cash + cashTips + manualCashIncome - manualCashExpenses;
   const netFlow = received + manualIncome - expenses;
 
   const downloadCSV = () => {
@@ -147,6 +157,7 @@ function ExportPage() {
         "efectivo_contado_clp",
         "diferencia_caja_clp",
         "resultado_ajustado_clp",
+        "impacto_efectivo_clp",
       ],
       ...payments.map((p) => {
         const d = new Date(p.created_at);
@@ -170,17 +181,19 @@ function ExportPage() {
           "",
           "",
           "",
+          collected && p.method === "efectivo" ? String(p.amount + tip) : "0",
         ];
       }),
       ...movements.map((movement) => {
         const d = new Date(movement.created_at);
         const signedAmount = movement.kind === "egreso" ? -movement.amount : movement.amount;
+        const cashImpact = movement.method === "efectivo" ? signedAmount : 0;
         return [
           movement.accounting_date,
           d.toTimeString().slice(0, 5),
           `${movement.kind}_manual`,
           "Movimiento manual",
-          "",
+          methodLabel(movement.method),
           "registrado",
           String(movement.amount),
           "0",
@@ -193,6 +206,7 @@ function ExportPage() {
           "",
           "",
           "",
+          String(cashImpact),
         ];
       }),
       ...dailyCloses.map((report) => {
@@ -215,6 +229,7 @@ function ExportPage() {
           report.cash_counted == null ? "" : String(report.cash_counted),
           report.cash_counted == null ? "" : String(report.cash_diff),
           report.cash_counted == null ? "" : String(report.profit_estimated + report.cash_diff),
+          "",
         ];
       }),
     ];
@@ -256,6 +271,7 @@ function ExportPage() {
   <div class="card"><div class="l">Total recibido</div><div class="v">${clp(received)}</div></div>
   <div class="card"><div class="l">Ingresos manuales</div><div class="v">${clp(manualIncome)}</div></div>
   <div class="card"><div class="l">Egresos</div><div class="v">${clp(expenses)}</div></div>
+  <div class="card"><div class="l">Efectivo esperado</div><div class="v">${clp(expectedCash)}</div></div>
   <div class="card"><div class="l">Flujo neto</div><div class="v">${clp(netFlow)}</div></div>
   <div class="card"><div class="l">Comisiones</div><div class="v">${clp(commissions)}</div></div>
   <div class="card"><div class="l">Cobros</div><div class="v">${collectedPayments.length}</div></div>
@@ -295,12 +311,13 @@ function ExportPage() {
 </table>
 <h2>Movimientos manuales</h2>
 <table>
-  <tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th class="right">Monto</th></tr>
+  <tr><th>Fecha</th><th>Tipo</th><th>Método</th><th>Concepto</th><th class="right">Monto</th><th class="right">Impacto efectivo</th></tr>
   ${movements
     .map((movement) => {
       const d = new Date(movement.created_at);
       const sign = movement.kind === "egreso" ? "−" : "+";
-      return `<tr><td>${formatAccountingDate(movement.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${movement.kind}</td><td>${movement.concept}</td><td class="right">${sign} ${clp(movement.amount)}</td></tr>`;
+      const cashImpact = movement.method === "efectivo" ? movement.amount : 0;
+      return `<tr><td>${formatAccountingDate(movement.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${movement.kind}</td><td>${methodLabel(movement.method)}</td><td>${movement.concept}</td><td class="right">${sign} ${clp(movement.amount)}</td><td class="right">${movement.method === "efectivo" ? `${sign} ${clp(cashImpact)}` : clp(0)}</td></tr>`;
     })
     .join("")}
 </table>

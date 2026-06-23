@@ -38,8 +38,19 @@ import {
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/caja")({
+  validateSearch: (search: Record<string, unknown>): { date?: string } => {
+    const today = localDateKey();
+    const requestedDate =
+      typeof search.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
+        ? search.date
+        : undefined;
+
+    return requestedDate && requestedDate <= today ? { date: requestedDate } : {};
+  },
   component: CajaPage,
 });
+
+const LAST_CASH_ACCOUNTING_DATE_KEY = "kutt-last-cash-accounting-date";
 
 interface ServiceRow {
   id: string;
@@ -61,7 +72,10 @@ interface ClientRow {
 function CajaPage() {
   const { business } = useBusiness();
   const qc = useQueryClient();
-  const [accountingDate, setAccountingDate] = useState(() => localDateKey());
+  const { date: dateFromSearch } = Route.useSearch();
+  const [accountingDate, setAccountingDate] = useState(
+    () => dateFromSearch ?? getStoredCashAccountingDate(),
+  );
   // TODO(Phase 2): Add week aggregation once all cash queries share a tested range model.
   const selectedDate = useMemo(() => parseLocalDateKey(accountingDate), [accountingDate]);
   const [from, to] = dayRange(selectedDate);
@@ -106,7 +120,7 @@ function CajaPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cash_movements")
-        .select("id,accounting_date,kind,amount,concept,created_at")
+        .select("id,accounting_date,kind,amount,concept,method,created_at")
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate)
         .order("created_at", { ascending: false });
@@ -223,6 +237,18 @@ function CajaPage() {
     () => computeDayTotals(payments, appointments, movements),
     [payments, appointments, movements],
   );
+
+  useEffect(() => {
+    if (dateFromSearch && dateFromSearch !== accountingDate) {
+      setAccountingDate(dateFromSearch);
+    }
+  }, [accountingDate, dateFromSearch]);
+
+  useEffect(() => {
+    if (isValidPastOrTodayDate(accountingDate)) {
+      localStorage.setItem(LAST_CASH_ACCOUNTING_DATE_KEY, accountingDate);
+    }
+  }, [accountingDate]);
   const agendaProgress =
     totals.agendaExpected > 0
       ? Math.min(100, Math.round((totals.agendaCollected / totals.agendaExpected) * 100))
@@ -302,7 +328,7 @@ function CajaPage() {
         </div>
         <Link
           to="/more/close"
-          search={{ date: accountingDate }}
+          search={{ date: accountingDate, from: "caja" }}
           className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground active:text-foreground"
         >
           Ver informe <ChevronRight className="w-3.5 h-3.5" />
@@ -419,7 +445,7 @@ function CajaPage() {
       {/* Métricas operativas */}
       <section className="px-5 mt-3 grid grid-cols-2 gap-2">
         <KpiCard
-          label="Utilidad estimada"
+          label="Ganancia estimada"
           value={clp(totals.profit)}
           tone={totals.profit >= 0 ? "success" : "destructive"}
         />
@@ -841,7 +867,7 @@ function MovementItem({ m, onDelete }: { m: CashMovementRow; onDelete: () => voi
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{m.concept}</p>
           <p className="text-[11px] text-muted-foreground">
-            {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso manual"}
+            {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso"} · {methodLabel(m.method)}
           </p>
         </div>
         <div className="text-right">
@@ -953,6 +979,7 @@ function NewMovementSheet({
       amount: n,
       concept: concept.trim(),
       accounting_date: accountingDate,
+      method,
     });
     setSaving(false);
     if (error) {
@@ -1133,6 +1160,30 @@ function NewMovementSheet({
                 onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
                 className="mt-1 w-full border-0 bg-transparent text-center text-3xl font-semibold tabular outline-none"
               />
+            </div>
+          )}
+
+          {!isService && (
+            <div className="mt-4">
+              <p className="text-xs text-muted-foreground px-1">Método</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {PAYMENT_METHODS.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setMethod(item.value)}
+                      className={`h-10 rounded-xl hairline flex items-center justify-center gap-2 text-xs font-medium ${
+                        method === item.value ? "bg-foreground text-background" : "bg-background"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -1324,6 +1375,16 @@ const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string; icon: typeof
   { value: "debito", label: methodLabel("debito"), icon: CreditCard },
   { value: "credito", label: methodLabel("credito"), icon: CreditCard },
 ];
+
+function getStoredCashAccountingDate(): string {
+  if (typeof window === "undefined") return localDateKey();
+  const value = window.localStorage.getItem(LAST_CASH_ACCOUNTING_DATE_KEY);
+  return value && isValidPastOrTodayDate(value) ? value : localDateKey();
+}
+
+function isValidPastOrTodayDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && value <= localDateKey();
+}
 
 function parseLocalDateKey(value: string): Date {
   const [year, month, day] = value.split("-").map(Number);
