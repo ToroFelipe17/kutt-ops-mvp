@@ -388,23 +388,31 @@ function CajaPage() {
             </div>
           </div>
 
-          <div className="relative mt-6 grid grid-cols-3 gap-2">
-            <Mini
-              icon={<Banknote className="w-3.5 h-3.5" />}
-              label="Efectivo"
-              value={clp(totals.cash)}
-            />
-            <Mini
-              icon={<Send className="w-3.5 h-3.5" />}
-              label="Transfer."
-              value={clp(totals.transfer)}
-            />
-            <Mini
-              icon={<CreditCard className="w-3.5 h-3.5" />}
-              label="Tarjeta"
-              value={clp(totals.card)}
-            />
-          </div>
+          {(totals.cash > 0 || totals.transfer > 0 || totals.card > 0) && (
+            <div className="relative mt-6 flex flex-wrap gap-2">
+              {totals.cash > 0 && (
+                <Mini
+                  icon={<Banknote className="w-3.5 h-3.5" />}
+                  label="Efectivo"
+                  value={clp(totals.cash)}
+                />
+              )}
+              {totals.transfer > 0 && (
+                <Mini
+                  icon={<Send className="w-3.5 h-3.5" />}
+                  label="Transfer."
+                  value={clp(totals.transfer)}
+                />
+              )}
+              {totals.card > 0 && (
+                <Mini
+                  icon={<CreditCard className="w-3.5 h-3.5" />}
+                  label="Tarjeta"
+                  value={clp(totals.card)}
+                />
+              )}
+            </div>
+          )}
         </motion.div>
       </section>
 
@@ -418,27 +426,46 @@ function CajaPage() {
         <KpiCard label="Propinas" value={clp(totals.tips)} />
       </section>
 
-      <section className="px-5 mt-3">
-        <dl className="divide-y divide-border rounded-2xl bg-surface px-4 hairline">
-          <CashSummaryRow label="Ingresos manuales" value={clp(totals.extraIncome)} tone="info" />
-          <CashSummaryRow label="Egresos" value={`− ${clp(totals.expenses)}`} tone="destructive" />
-          <CashSummaryRow label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
-          {dailyReport?.cash_counted != null && (
-            <CashSummaryRow
-              label="Informe diario"
-              value={formatCashDifferenceStatus(dailyReport.cash_diff)}
-              tone={
-                dailyReport.cash_diff === 0
-                  ? "success"
-                  : dailyReport.cash_diff > 0
-                    ? "info"
-                    : "destructive"
-              }
-              bold
-            />
-          )}
-        </dl>
-      </section>
+      {(totals.extraIncome > 0 ||
+        totals.expenses > 0 ||
+        totals.cashOnHand !== 0 ||
+        dailyReport?.cash_counted != null) && (
+        <section className="px-5 mt-3">
+          <dl className="divide-y divide-border rounded-2xl bg-surface px-4 hairline">
+            {totals.extraIncome > 0 && (
+              <CashSummaryRow
+                label="Ingresos manuales"
+                value={clp(totals.extraIncome)}
+                tone="info"
+              />
+            )}
+            {totals.expenses > 0 && (
+              <CashSummaryRow
+                label="Egresos"
+                value={`− ${clp(totals.expenses)}`}
+                tone="destructive"
+              />
+            )}
+            {(totals.cashOnHand !== 0 || dailyReport?.cash_counted != null) && (
+              <CashSummaryRow label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
+            )}
+            {dailyReport?.cash_counted != null && (
+              <CashSummaryRow
+                label="Informe diario"
+                value={formatCashDifferenceStatus(dailyReport.cash_diff)}
+                tone={
+                  dailyReport.cash_diff === 0
+                    ? "success"
+                    : dailyReport.cash_diff > 0
+                      ? "info"
+                      : "destructive"
+                }
+                bold
+              />
+            )}
+          </dl>
+        </section>
+      )}
 
       {/* Cobros de agenda */}
       <section className="px-5 mt-5">

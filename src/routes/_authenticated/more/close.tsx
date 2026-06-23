@@ -177,7 +177,7 @@ function ClosePage() {
             <Row label="Por cobrar" value={clp(totals.pending)} tone="warning" />
             <Row label="Comisiones" value={`− ${clp(totals.commissions)}`} />
             <Row label="Egresos" value={`− ${clp(totals.expenses)}`} />
-            <Row label="Efectivo esperado estimado" value={clp(totals.cashOnHand)} bold />
+            <Row label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
             <Row label="IVA estimado" value={clp(totals.ivaEstimated)} />
           </dl>
         </motion.div>
@@ -308,8 +308,14 @@ function Row({
             : "text-foreground";
   return (
     <div className="py-2.5 flex items-center justify-between">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className={`tabular ${bold ? "text-base font-semibold" : "text-sm font-medium"} ${c}`}>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd
+        className={`tabular ${
+          value === "Sin conteo"
+            ? "text-xs font-medium text-muted-foreground"
+            : `${bold ? "text-sm font-semibold" : "text-sm font-medium"} ${c}`
+        }`}
+      >
         {value}
       </dd>
     </div>
