@@ -8,6 +8,7 @@ import { clp, localDateKey, shortTime } from "@/lib/format";
 import {
   computeDayTotals,
   dayRange,
+  filterCashActivePayments,
   isCollectedPayment,
   type AppointmentLite,
   type PaymentRow,
@@ -46,7 +47,6 @@ function CashAgendaDetailPage() {
         .eq("business_id", business!.id)
         .gte("starts_at", from)
         .lte("starts_at", to)
-        .neq("status", "cancelado")
         .order("starts_at", { ascending: true });
       if (error) throw error;
       return (data ?? []) as AppointmentLite[];
@@ -87,9 +87,17 @@ function CashAgendaDetailPage() {
     () => computeDayTotals(payments, appointments, []),
     [appointments, payments],
   );
+  const activeAppointments = useMemo(
+    () => appointments.filter((appointment) => appointment.status !== "cancelado"),
+    [appointments],
+  );
+  const activePayments = useMemo(
+    () => filterCashActivePayments(payments, appointments),
+    [appointments, payments],
+  );
   const collectedByAppointment = useMemo(() => {
     const result = new Map<string, number>();
-    payments.filter(isCollectedPayment).forEach((payment) => {
+    activePayments.filter(isCollectedPayment).forEach((payment) => {
       if (!payment.appointment_id) return;
       result.set(
         payment.appointment_id,
@@ -97,20 +105,20 @@ function CashAgendaDetailPage() {
       );
     });
     return result;
-  }, [payments]);
+  }, [activePayments]);
   const staffById = useMemo(
     () => Object.fromEntries(staff.map((member) => [member.id, member.name])),
     [staff],
   );
   const orderedAppointments = useMemo(
     () =>
-      [...appointments].sort((a, b) => {
+      [...activeAppointments].sort((a, b) => {
         const aPending = a.price - (collectedByAppointment.get(a.id) ?? 0) > 0;
         const bPending = b.price - (collectedByAppointment.get(b.id) ?? 0) > 0;
         if (aPending !== bPending) return aPending ? -1 : 1;
         return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
       }),
-    [appointments, collectedByAppointment],
+    [activeAppointments, collectedByAppointment],
   );
   const progress =
     totals.agendaExpected > 0

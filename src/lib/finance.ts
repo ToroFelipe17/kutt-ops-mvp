@@ -59,6 +59,30 @@ export interface DayTotals {
 
 const TIP_NOTE_PATTERN = /^KUTT_TIP_AMOUNT:(\d+)$/m;
 
+function appointmentStatusById(appointments: AppointmentLite[]): Map<string, string> {
+  return new Map(appointments.map((appointment) => [appointment.id, appointment.status]));
+}
+
+export function isPaymentLinkedToCancelledAppointment(
+  payment: Pick<PaymentRow, "appointment_id">,
+  appointments: AppointmentLite[],
+): boolean {
+  if (!payment.appointment_id) return false;
+  return appointmentStatusById(appointments).get(payment.appointment_id) === "cancelado";
+}
+
+export function filterCashActivePayments(
+  payments: PaymentRow[],
+  appointments: AppointmentLite[],
+): PaymentRow[] {
+  const statuses = appointmentStatusById(appointments);
+
+  return payments.filter((payment) => {
+    if (!payment.appointment_id) return true;
+    return statuses.get(payment.appointment_id) !== "cancelado";
+  });
+}
+
 export function getPaymentTipAmount(payment: Pick<PaymentRow, "notes">): number {
   const match = payment.notes?.match(TIP_NOTE_PATTERN);
   return match ? Number(match[1]) || 0 : 0;
@@ -91,7 +115,8 @@ export function computeDayTotals(
   movements: CashMovementRow[],
 ): DayTotals {
   const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-  const collectedPayments = payments.filter(isCollectedPayment);
+  const activePayments = filterCashActivePayments(payments, appointments);
+  const collectedPayments = activePayments.filter(isCollectedPayment);
   const cashPayments = collectedPayments.filter((p) => p.method === "efectivo");
   const cash = sum(cashPayments.map((p) => p.amount));
   const transfer = sum(

@@ -7,10 +7,14 @@ import { useBusiness } from "@/lib/business-context";
 import { clp } from "@/lib/format";
 import {
   accountingMonthRange,
+  dayRange,
+  filterCashActivePayments,
   getPaymentDisplayNotes,
   getPaymentTipAmount,
   isCollectedPayment,
+  isPaymentLinkedToCancelledAppointment,
   methodLabel,
+  type AppointmentLite,
   type CashMovementRow,
   type PaymentRow,
 } from "@/lib/finance";
@@ -40,6 +44,8 @@ function ExportPage() {
   const ref = new Date();
   ref.setMonth(ref.getMonth() - offset);
   const [from, to] = accountingMonthRange(ref);
+  const [appointmentsFrom] = dayRange(parseLocalDate(from));
+  const [, appointmentsTo] = dayRange(parseLocalDate(to));
   const monthLabel = ref.toLocaleDateString("es-CL", { month: "long", year: "numeric" });
 
   const { data: payments = [] } = useQuery({
@@ -73,6 +79,20 @@ function ExportPage() {
   });
   const staffMap = Object.fromEntries(staff.map((s) => [s.id, s.name]));
 
+  const { data: appointments = [] } = useQuery({
+    queryKey: ["exp-appointments", business?.id, from],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("appointments")
+        .select("id,starts_at,price,status,client_name_snapshot,staff_id")
+        .eq("business_id", business!.id)
+        .gte("starts_at", appointmentsFrom)
+        .lte("starts_at", appointmentsTo);
+      return (data ?? []) as AppointmentLite[];
+    },
+  });
+
   const { data: movements = [] } = useQuery({
     queryKey: ["exp-mov", business?.id, from],
     enabled: !!business?.id,
@@ -105,7 +125,11 @@ function ExportPage() {
     },
   });
 
-  const collectedPayments = payments.filter(isCollectedPayment);
+  const activePayments = filterCashActivePayments(payments, appointments);
+  const cancelledAppointmentPayments = payments.filter((payment) =>
+    isPaymentLinkedToCancelledAppointment(payment, appointments),
+  );
+  const collectedPayments = activePayments.filter(isCollectedPayment);
   const sales = collectedPayments.reduce((s, p) => s + p.amount, 0);
   const tips = collectedPayments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
   const received = sales + tips;
@@ -149,7 +173,7 @@ function ExportPage() {
         "diferencia_caja_clp",
         "resultado_ajustado_clp",
       ],
-      ...payments.map((p) => {
+      ...activePayments.map((p) => {
         const d = new Date(p.created_at);
         const tip = getPaymentTipAmount(p);
         const collected = isCollectedPayment(p);
@@ -193,6 +217,30 @@ function ExportPage() {
           "",
           "",
           movement.concept.replace(/[\n,;]/g, " "),
+          "",
+          "",
+          "",
+          "",
+        ];
+      }),
+      ...cancelledAppointmentPayments.map((p) => {
+        const d = new Date(p.created_at);
+        const tip = getPaymentTipAmount(p);
+        return [
+          p.accounting_date,
+          d.toTimeString().slice(0, 5),
+          "pago_servicio_no_contabilizado",
+          "Cita cancelada",
+          methodLabel(p.method),
+          `${p.status}_cita_cancelada`,
+          String(p.amount),
+          String(tip),
+          "0",
+          "0",
+          p.staff_id ? (staffMap[p.staff_id] ?? "") : "",
+          p.commission_pct != null ? String(p.commission_pct) : "",
+          p.commission_amount != null ? String(p.commission_amount) : "",
+          "Pago ligado a cita cancelada. No contabilizado como venta activa.",
           "",
           "",
           "",
@@ -289,12 +337,14 @@ function ExportPage() {
 <h2>Detalle</h2>
 <table>
   <tr><th>Fecha</th><th>Método</th><th>Barbero</th><th>Estado</th><th class="right">Venta</th><th class="right">Propina</th><th class="right">Recibido</th></tr>
-  ${payments
+  ${[...activePayments, ...cancelledAppointmentPayments]
     .map((p) => {
       const d = new Date(p.created_at);
       const tip = getPaymentTipAmount(p);
-      const total = isCollectedPayment(p) ? p.amount + tip : 0;
-      return `<tr><td>${formatAccountingDate(p.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${p.status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(total)}</td></tr>`;
+      const linkedToCancelled = isPaymentLinkedToCancelledAppointment(p, appointments);
+      const total = !linkedToCancelled && isCollectedPayment(p) ? p.amount + tip : 0;
+      const status = linkedToCancelled ? "No contabilizado · cita cancelada" : p.status;
+      return `<tr><td>${formatAccountingDate(p.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(total)}</td></tr>`;
     })
     .join("")}
 </table>
@@ -393,4 +443,9 @@ function Card({ label, value }: { label: string; value: string }) {
 function formatAccountingDate(value: string): string {
   const [year, month, day] = value.split("-");
   return `${day}-${month}-${year}`;
+}
+
+function parseLocalDate(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
 }

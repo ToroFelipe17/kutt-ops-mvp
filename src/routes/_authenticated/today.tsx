@@ -22,7 +22,9 @@ import { clp, endOfDay, localDateKey, shortTime, startOfDay, whatsappLink } from
 import {
   encodePaymentNotes,
   getPaymentTipAmount,
+  isCollectedPayment,
   methodLabel,
+  type PaymentRow,
   type PaymentMethod,
 } from "@/lib/finance";
 import { toast } from "sonner";
@@ -75,11 +77,14 @@ function Today() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payments")
-        .select("amount,method,notes")
+        .select("amount,method,notes,appointment_id,status")
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate);
       if (error) throw error;
-      return data;
+      return (data ?? []) as Pick<
+        PaymentRow,
+        "amount" | "method" | "notes" | "appointment_id" | "status"
+      >[];
     },
   });
 
@@ -119,12 +124,19 @@ function Today() {
   }, [accountingDate, business?.id, qc]);
 
   const totals = useMemo(() => {
-    const revenue = payments.reduce((s, p) => s + (p.amount ?? 0), 0);
-    const tips = payments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
+    const activeAppointmentIds = new Set(
+      appts.filter((appointment) => appointment.status !== "cancelado").map((appointment) => appointment.id),
+    );
+    const activePayments = payments.filter(
+      (payment) => !payment.appointment_id || activeAppointmentIds.has(payment.appointment_id),
+    );
+    const collectedPayments = activePayments.filter(isCollectedPayment);
+    const revenue = collectedPayments.reduce((s, p) => s + (p.amount ?? 0), 0);
+    const tips = collectedPayments.reduce((s, p) => s + getPaymentTipAmount(p), 0);
     const pending = appts
       .filter((a) => a.status !== "pagado" && a.status !== "completado" && a.status !== "cancelado")
       .reduce((s, a) => s + (a.price ?? 0), 0);
-    const cash = payments
+    const cash = collectedPayments
       .filter((p) => p.method === "efectivo")
       .reduce((s, p) => s + (p.amount ?? 0), 0);
     return { revenue, tips, pending, cash, count: appts.length };
@@ -132,7 +144,19 @@ function Today() {
 
   const updateStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: AppointmentStatus }) => {
-      // TODO(Phase 2C): Paid cancellations need an audited payment reversal, not only a status update.
+      if (status === "cancelado") {
+        const { data: collectedPayment, error: paymentError } = await supabase
+          .from("payments")
+          .select("id,status")
+          .eq("appointment_id", id)
+          .neq("status", "pendiente")
+          .limit(1)
+          .maybeSingle();
+        if (paymentError) throw paymentError;
+        if (collectedPayment) {
+          throw new Error("Esta cita ya está cobrada. Para cancelarla se debe anular el cobro.");
+        }
+      }
       const { error } = await supabase.from("appointments").update({ status }).eq("id", id);
       if (error) throw error;
     },

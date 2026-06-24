@@ -62,8 +62,7 @@ function ClosePage() {
         .select("id,starts_at,price,status,client_name_snapshot,staff_id")
         .eq("business_id", business!.id)
         .gte("starts_at", from)
-        .lte("starts_at", to)
-        .neq("status", "cancelado");
+        .lte("starts_at", to);
       return data ?? [];
     },
   });
