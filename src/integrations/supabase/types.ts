@@ -139,6 +139,7 @@ export type Database = {
           created_at: string;
           id: string;
           kind: string;
+          method: Database["public"]["Enums"]["payment_method"];
         };
         Insert: {
           accounting_date?: string;
@@ -148,6 +149,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           kind: string;
+          method?: Database["public"]["Enums"]["payment_method"];
         };
         Update: {
           accounting_date?: string;
@@ -157,6 +159,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           kind?: string;
+          method?: Database["public"]["Enums"]["payment_method"];
         };
         Relationships: [];
       };
