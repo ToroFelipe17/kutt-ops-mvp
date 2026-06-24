@@ -16,7 +16,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/lib/business-context";
 import { clp, localDateKey, shortTime } from "@/lib/format";
 import {
-  computeDayTotals,
   dayRange,
   encodePaymentNotes,
   filterCashActivePayments,
@@ -202,21 +201,39 @@ function CashAgendaDetailPage() {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Error"),
   });
 
-  const selectedAppointmentIds = useMemo(
-    () => new Set(appointments.map((appointment) => appointment.id)),
-    [appointments],
-  );
-  const selectedPayments = useMemo(
-    () =>
-      payments.filter(
-        (payment) => payment.appointment_id && selectedAppointmentIds.has(payment.appointment_id),
-      ),
-    [payments, selectedAppointmentIds],
-  );
-  const totals = useMemo(
-    () => computeDayTotals(selectedPayments, appointments, []),
-    [appointments, selectedPayments],
-  );
+  const closePending = useMutation({
+    mutationFn: async (appointment: AgendaAppointment) => {
+      if (!business?.id) throw new Error("Negocio no disponible.");
+
+      const { data: existing, error: existingError } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("appointment_id", appointment.id)
+        .is("annulled_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) {
+        throw new Error("Esta cita ya tiene un cobro activo. Primero se debe anular el cobro.");
+      }
+
+      const { error } = await supabase
+        .from("appointments")
+        .update({ status: "cancelado" })
+        .eq("id", appointment.id)
+        .eq("business_id", business.id)
+        .neq("status", "cancelado");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Pendiente cerrado");
+      qc.invalidateQueries({ queryKey: ["cash-agenda-appointments", business?.id, date] });
+      qc.invalidateQueries({ queryKey: ["cash-agenda-previous-appointments", business?.id, date] });
+      qc.invalidateQueries({ queryKey: ["today", business?.id] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Error"),
+  });
+
   const activeAppointments = useMemo(
     () => appointments.filter((appointment) => appointment.status !== "cancelado"),
     [appointments],
@@ -234,6 +251,14 @@ function CashAgendaDetailPage() {
       ),
     [activePayments],
   );
+  const activePaymentByAppointment = useMemo(() => {
+    const result = new Map<string, PaymentRow>();
+    activePayments.forEach((payment) => {
+      if (!payment.appointment_id || result.has(payment.appointment_id)) return;
+      result.set(payment.appointment_id, payment);
+    });
+    return result;
+  }, [activePayments]);
   const collectedByAppointment = useMemo(() => {
     const result = new Map<string, number>();
     activePayments.filter(isCollectedPayment).forEach((payment) => {
@@ -249,15 +274,31 @@ function CashAgendaDetailPage() {
     () => new Map(staff.map((member) => [member.id, member.name])),
     [staff],
   );
+  const agendaTotals = useMemo(() => {
+    const expected = activeAppointments.reduce(
+      (total, appointment) => total + appointment.price,
+      0,
+    );
+    const pending = activeAppointments.reduce((total, appointment) => {
+      if (activePaymentAppointmentIds.has(appointment.id)) return total;
+      return total + appointment.price;
+    }, 0);
+
+    return {
+      expected,
+      pending,
+      resolved: Math.max(expected - pending, 0),
+    };
+  }, [activeAppointments, activePaymentAppointmentIds]);
   const orderedAppointments = useMemo(
     () =>
       [...activeAppointments].sort((a, b) => {
-        const aPending = a.price - (collectedByAppointment.get(a.id) ?? 0) > 0;
-        const bPending = b.price - (collectedByAppointment.get(b.id) ?? 0) > 0;
+        const aPending = !activePaymentAppointmentIds.has(a.id);
+        const bPending = !activePaymentAppointmentIds.has(b.id);
         if (aPending !== bPending) return aPending ? -1 : 1;
         return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
       }),
-    [activeAppointments, collectedByAppointment],
+    [activeAppointments, activePaymentAppointmentIds],
   );
   const previousPendingAppointments = useMemo(
     () =>
@@ -272,11 +313,19 @@ function CashAgendaDetailPage() {
     [activePaymentAppointmentIds, collectedByAppointment, previousAppointments],
   );
   const progress =
-    totals.agendaExpected > 0
-      ? Math.min(100, Math.round((totals.agendaCollected / totals.agendaExpected) * 100))
+    agendaTotals.expected > 0
+      ? Math.min(100, Math.round((agendaTotals.resolved / agendaTotals.expected) * 100))
       : 0;
-  const hasExpectedAmount = totals.agendaExpected > 0;
-  const hasMissingAmount = totals.pending > 0;
+  const hasExpectedAmount = agendaTotals.expected > 0;
+  const hasMissingAmount = agendaTotals.pending > 0;
+
+  const confirmClosePending = (appointment: AgendaAppointment) => {
+    const confirmed = window.confirm(
+      "¿Cerrar este pendiente? La cita se marcará como cancelada y dejará de aparecer por cobrar. No se eliminará ningún pago.",
+    );
+    if (!confirmed) return;
+    closePending.mutate(appointment);
+  };
 
   return (
     <div className="min-h-screen bg-background pb-16 safe-top">
@@ -316,11 +365,11 @@ function CashAgendaDetailPage() {
                 {!hasExpectedAmount
                   ? "Sin cobros esperados"
                   : hasMissingAmount
-                    ? `Faltan ${clp(totals.pending)} por cobrar`
+                    ? `Faltan ${clp(agendaTotals.pending)} por cobrar`
                     : "Agenda cobrada"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Cobrado {clp(totals.agendaCollected)} de {clp(totals.agendaExpected)}
+                Resuelto {clp(agendaTotals.resolved)} de {clp(agendaTotals.expected)}
               </p>
             </div>
             <span
@@ -352,12 +401,13 @@ function CashAgendaDetailPage() {
         ) : (
           <ul className="space-y-2">
             {orderedAppointments.map((appointment) => {
-              const collected = collectedByAppointment.get(appointment.id) ?? 0;
-              const missing = Math.max(appointment.price - collected, 0);
               const hasAmount = appointment.price > 0;
+              const activePayment = activePaymentByAppointment.get(appointment.id) ?? null;
               const hasActivePayment = activePaymentAppointmentIds.has(appointment.id);
-              const paid = hasActivePayment && appointment.price > 0 && missing === 0;
-              const partial = collected > 0 && missing > 0;
+              const serviceDate = localDateKey(new Date(appointment.starts_at));
+              const lateCollected =
+                activePayment != null && activePayment.accounting_date !== serviceDate;
+              const paid = hasActivePayment && appointment.price > 0;
 
               return (
                 <li
@@ -370,37 +420,51 @@ function CashAgendaDetailPage() {
                     </p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
                       {shortTime(appointment.starts_at)}
-                      {appointment.staff_id && staffById[appointment.staff_id]
-                        ? ` · ${staffById[appointment.staff_id]}`
+                      {appointment.staff_id && staffById.get(appointment.staff_id)
+                        ? ` · ${staffById.get(appointment.staff_id)}`
                         : ""}
                     </p>
+                    {lateCollected ? (
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Registrado en caja del {activePayment.accounting_date}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold tabular">{clp(appointment.price)}</p>
                     <p
                       className={`mt-0.5 text-[10px] font-medium ${
-                        paid ? "text-success" : partial ? "text-warning" : "text-muted-foreground"
+                        paid ? "text-success" : "text-muted-foreground"
                       }`}
                     >
                       {!hasAmount
                         ? "Sin monto"
-                        : paid
-                          ? "Cobrado"
-                          : hasActivePayment
-                            ? "Cobro registrado"
-                            : partial
-                              ? `${clp(missing)} pendiente`
-                              : "Pendiente"}
+                        : lateCollected
+                          ? "Cobro fuera de fecha"
+                          : paid
+                            ? "Cobrado"
+                            : "Pendiente"}
                     </p>
                   </div>
-                  {hasAmount && !hasActivePayment ? (
-                    <button
-                      type="button"
-                      onClick={() => setPaymentTarget(appointment)}
-                      className="h-9 rounded-xl bg-foreground px-3 text-xs font-semibold text-background active:scale-[0.98] transition-transform"
-                    >
-                      Cobrar
-                    </button>
+                  {!hasActivePayment ? (
+                    <div className="flex shrink-0 flex-col gap-1.5">
+                      {hasAmount ? (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentTarget(appointment)}
+                          className="h-9 rounded-xl bg-foreground px-3 text-xs font-semibold text-background active:scale-[0.98] transition-transform"
+                        >
+                          Cobrar
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => confirmClosePending(appointment)}
+                        className="h-8 rounded-xl px-3 text-[11px] font-medium text-muted-foreground active:scale-[0.98] transition-transform hover:bg-muted"
+                      >
+                        No se cobrará
+                      </button>
+                    </div>
                   ) : null}
                 </li>
               );
@@ -421,9 +485,6 @@ function CashAgendaDetailPage() {
           </div>
           <ul className="space-y-2">
             {previousPendingAppointments.map((appointment) => {
-              const collected = collectedByAppointment.get(appointment.id) ?? 0;
-              const missing = Math.max(appointment.price - collected, 0);
-
               return (
                 <li
                   key={appointment.id}
@@ -442,17 +503,24 @@ function CashAgendaDetailPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold tabular">{clp(appointment.price)}</p>
-                    <p className="mt-0.5 text-[10px] font-medium text-warning">
-                      {collected > 0 ? `${clp(missing)} pendiente` : "Pendiente"}
-                    </p>
+                    <p className="mt-0.5 text-[10px] font-medium text-warning">Pendiente</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentTarget(appointment)}
-                    className="h-9 rounded-xl bg-foreground px-3 text-xs font-semibold text-background active:scale-[0.98] transition-transform"
-                  >
-                    Cobrar
-                  </button>
+                  <div className="flex shrink-0 flex-col gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentTarget(appointment)}
+                      className="h-9 rounded-xl bg-foreground px-3 text-xs font-semibold text-background active:scale-[0.98] transition-transform"
+                    >
+                      Cobrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => confirmClosePending(appointment)}
+                      className="h-8 rounded-xl px-3 text-[11px] font-medium text-muted-foreground active:scale-[0.98] transition-transform hover:bg-muted"
+                    >
+                      No se cobrará
+                    </button>
+                  </div>
                 </li>
               );
             })}
