@@ -11,14 +11,18 @@ import { computeDayTotals, dayRange, type CashMovementRow, type PaymentRow } fro
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/close")({
-  validateSearch: (search: Record<string, unknown>): { date?: string } => {
+  validateSearch: (search: Record<string, unknown>): { date?: string; from?: "caja" } => {
     const today = localDateKey();
     const requestedDate =
       typeof search.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
         ? search.date
         : undefined;
+    const source = search.from === "caja" ? "caja" : undefined;
 
-    return requestedDate && requestedDate <= today ? { date: requestedDate } : {};
+    return {
+      ...(requestedDate && requestedDate <= today ? { date: requestedDate } : {}),
+      ...(source ? { from: source } : {}),
+    };
   },
   component: ClosePage,
 });
@@ -27,7 +31,7 @@ function ClosePage() {
   const { business } = useBusiness();
   const { user } = useAuth();
   const qc = useQueryClient();
-  const { date } = Route.useSearch();
+  const { date, from: source } = Route.useSearch();
   const accountingDate = date ?? localDateKey();
   const [from, to] = dayRange(parseLocalDate(accountingDate));
   // TODO(Phase 2C): Create automatic snapshots after midnight in America/Santiago.
@@ -139,12 +143,22 @@ function ClosePage() {
   return (
     <div className="min-h-screen bg-background pb-28 safe-top">
       <header className="px-5 pt-5 pb-3 flex items-center gap-3">
-        <Link
-          to="/more"
-          className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </Link>
+        {source === "caja" ? (
+          <Link
+            to="/caja"
+            search={{ date: accountingDate }}
+            className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : (
+          <Link
+            to="/more"
+            className="h-9 w-9 rounded-full bg-surface hairline grid place-items-center"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        )}
         <div>
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
             Informe diario

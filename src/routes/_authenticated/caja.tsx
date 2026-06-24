@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +38,15 @@ import {
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/caja")({
+  validateSearch: (search: Record<string, unknown>): { date?: string } => {
+    const today = localDateKey();
+    const requestedDate =
+      typeof search.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
+        ? search.date
+        : undefined;
+
+    return requestedDate && requestedDate <= today ? { date: requestedDate } : {};
+  },
   component: CajaPage,
 });
 
@@ -61,11 +70,24 @@ interface ClientRow {
 function CajaPage() {
   const { business } = useBusiness();
   const qc = useQueryClient();
-  const [accountingDate, setAccountingDate] = useState(() => localDateKey());
+  const navigate = useNavigate();
+  const { date: dateFromSearch } = Route.useSearch();
+  const [accountingDate, setAccountingDate] = useState(() => dateFromSearch ?? localDateKey());
   // TODO(Phase 2): Add week aggregation once all cash queries share a tested range model.
   const selectedDate = useMemo(() => parseLocalDateKey(accountingDate), [accountingDate]);
   const [from, to] = dayRange(selectedDate);
   const isToday = accountingDate === localDateKey();
+
+  const updateAccountingDate = (nextDate: string) => {
+    const today = localDateKey();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate) || nextDate > today) return;
+    setAccountingDate(nextDate);
+    navigate({
+      to: "/caja",
+      search: nextDate === today ? {} : { date: nextDate },
+      replace: true,
+    });
+  };
 
   const { data: payments = [] } = useQuery({
     queryKey: ["caja-payments", business?.id, accountingDate],
@@ -223,6 +245,11 @@ function CajaPage() {
     () => computeDayTotals(payments, appointments, movements),
     [payments, appointments, movements],
   );
+
+  useEffect(() => {
+    setAccountingDate(dateFromSearch ?? localDateKey());
+  }, [dateFromSearch]);
+
   const agendaProgress =
     totals.agendaExpected > 0
       ? Math.min(100, Math.round((totals.agendaCollected / totals.agendaExpected) * 100))
@@ -302,7 +329,7 @@ function CajaPage() {
         </div>
         <Link
           to="/more/close"
-          search={{ date: accountingDate }}
+          search={{ date: accountingDate, from: "caja" }}
           className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground active:text-foreground"
         >
           Ver informe <ChevronRight className="w-3.5 h-3.5" />
@@ -315,7 +342,7 @@ function CajaPage() {
             type="button"
             title="Día anterior"
             aria-label="Ver día anterior"
-            onClick={() => setAccountingDate((current) => shiftLocalDateKey(current, -1))}
+            onClick={() => updateAccountingDate(shiftLocalDateKey(accountingDate, -1))}
             className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -331,7 +358,7 @@ function CajaPage() {
               max={localDateKey()}
               onChange={(event) => {
                 const value = event.target.value;
-                if (value && value <= localDateKey()) setAccountingDate(value);
+                if (value) updateAccountingDate(value);
               }}
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
@@ -340,7 +367,7 @@ function CajaPage() {
             type="button"
             title="Día siguiente"
             aria-label="Ver día siguiente"
-            onClick={() => setAccountingDate((current) => shiftLocalDateKey(current, 1))}
+            onClick={() => updateAccountingDate(shiftLocalDateKey(accountingDate, 1))}
             disabled={isToday}
             className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted active:bg-muted disabled:pointer-events-none disabled:opacity-30"
           >
@@ -348,7 +375,7 @@ function CajaPage() {
           </button>
           <button
             type="button"
-            onClick={() => setAccountingDate(localDateKey())}
+            onClick={() => updateAccountingDate(localDateKey())}
             disabled={isToday}
             className={`h-10 rounded-lg border px-3 text-xs font-medium transition-colors ${
               isToday
@@ -419,7 +446,7 @@ function CajaPage() {
       {/* Métricas operativas */}
       <section className="px-5 mt-3 grid grid-cols-2 gap-2">
         <KpiCard
-          label="Utilidad estimada"
+          label="Ganancia estimada"
           value={clp(totals.profit)}
           tone={totals.profit >= 0 ? "success" : "destructive"}
         />
