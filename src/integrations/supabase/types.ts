@@ -302,6 +302,8 @@ export type Database = {
       payments: {
         Row: {
           accounting_date: string;
+          annulled_at: string | null;
+          annulment_reason: string | null;
           amount: number;
           appointment_id: string | null;
           business_id: string;
@@ -316,6 +318,8 @@ export type Database = {
         };
         Insert: {
           accounting_date?: string;
+          annulled_at?: string | null;
+          annulment_reason?: string | null;
           amount: number;
           appointment_id?: string | null;
           business_id: string;
@@ -330,6 +334,8 @@ export type Database = {
         };
         Update: {
           accounting_date?: string;
+          annulled_at?: string | null;
+          annulment_reason?: string | null;
           amount?: number;
           appointment_id?: string | null;
           business_id?: string;
