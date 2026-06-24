@@ -12,27 +12,28 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/more/close")({
   validateSearch: (search: Record<string, unknown>): { date?: string; from?: "caja" } => {
-    const today = localDateKey();
     const requestedDate =
-      typeof search.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
+      typeof search.date === "string" && isSelectableAccountingDate(search.date)
         ? search.date
         : undefined;
     const source = search.from === "caja" ? "caja" : undefined;
 
     return {
-      ...(requestedDate && requestedDate <= today ? { date: requestedDate } : {}),
+      ...(requestedDate ? { date: requestedDate } : {}),
       ...(source ? { from: source } : {}),
     };
   },
   component: ClosePage,
 });
 
+const LAST_CASH_ACCOUNTING_DATE_KEY = "kutt-last-cash-accounting-date";
+
 function ClosePage() {
   const { business } = useBusiness();
   const { user } = useAuth();
   const qc = useQueryClient();
   const { date, from: source } = Route.useSearch();
-  const accountingDate = date ?? localDateKey();
+  const accountingDate = date ?? getStoredAccountingDate();
   const [from, to] = dayRange(parseLocalDate(accountingDate));
   // TODO(Phase 2C): Create automatic snapshots after midnight in America/Santiago.
   const [counted, setCounted] = useState("");
@@ -73,7 +74,7 @@ function ClosePage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("cash_movements")
-        .select("id,accounting_date,kind,amount,concept,created_at")
+        .select("id,accounting_date,kind,amount,concept,method,created_at")
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate);
       return (data ?? []) as CashMovementRow[];
@@ -113,7 +114,7 @@ function ClosePage() {
         business_id: business!.id,
         close_date: accountingDate,
         total_sales: totals.sales,
-        // The current schema has no manual-income column, so total_cash stores expected physical cash.
+        // total_cash stores expected physical cash, not every non-cash manual flow.
         total_cash: totals.cashOnHand,
         total_transfer: totals.transfer,
         total_card: totals.card,
@@ -183,16 +184,36 @@ function ClosePage() {
           <p className="mt-1 text-4xl font-semibold tabular tracking-tight">{clp(totals.sales)}</p>
 
           <dl className="mt-5 divide-y divide-border">
-            <Row label="Efectivo por servicios" value={clp(totals.cash)} />
-            <Row label="Transferencias" value={clp(totals.transfer)} />
-            <Row label="Tarjeta" value={clp(totals.card)} />
-            <Row label="Propinas" value={clp(totals.tips)} />
-            <Row label="Ingresos manuales" value={clp(totals.extraIncome)} />
-            <Row label="Por cobrar" value={clp(totals.pending)} tone="warning" />
-            <Row label="Comisiones" value={`− ${clp(totals.commissions)}`} />
-            <Row label="Egresos" value={`− ${clp(totals.expenses)}`} />
+            {totals.cash > 0 && <Row label="Efectivo por servicios" value={clp(totals.cash)} />}
+            {totals.cashManualIncome > 0 && (
+              <Row label="Efectivo por ingresos manuales" value={clp(totals.cashManualIncome)} />
+            )}
+            {totals.cashExpenses > 0 && (
+              <Row label="Egresos en efectivo" value={`− ${clp(totals.cashExpenses)}`} />
+            )}
+            {totals.transfer > 0 && <Row label="Transferencias" value={clp(totals.transfer)} />}
+            {totals.card > 0 && <Row label="Tarjeta" value={clp(totals.card)} />}
+            {totals.tips > 0 && <Row label="Propinas" value={clp(totals.tips)} />}
+            {totals.extraIncome > totals.cashManualIncome && (
+              <Row
+                label="Ingresos manuales no efectivo"
+                value={clp(totals.extraIncome - totals.cashManualIncome)}
+              />
+            )}
+            {totals.expenses > totals.cashExpenses && (
+              <Row
+                label="Egresos no efectivo"
+                value={`− ${clp(totals.expenses - totals.cashExpenses)}`}
+              />
+            )}
+            {totals.pending > 0 && (
+              <Row label="Por cobrar" value={clp(totals.pending)} tone="warning" />
+            )}
+            {totals.commissions > 0 && (
+              <Row label="Comisiones" value={`− ${clp(totals.commissions)}`} />
+            )}
             <Row label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
-            <Row label="IVA estimado" value={clp(totals.ivaEstimated)} />
+            {totals.ivaEstimated > 0 && <Row label="IVA estimado" value={clp(totals.ivaEstimated)} />}
           </dl>
         </motion.div>
       </section>
@@ -212,7 +233,7 @@ function ClosePage() {
             className="mt-3 w-full h-12 px-4 rounded-xl bg-background hairline text-sm tabular outline-none focus:border-border-strong"
           />
           <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Los movimientos manuales se consideran efectivo hasta que admitan método de pago.
+            Solo los movimientos manuales marcados como efectivo afectan el efectivo esperado.
           </p>
           {diff !== null && (
             <div
@@ -247,7 +268,7 @@ function ClosePage() {
         <div className="rounded-2xl bg-surface hairline px-4">
           <dl className="divide-y divide-border">
             <Row
-              label="Utilidad estimada"
+              label="Ganancia estimada"
               value={clp(totals.profit)}
               bold
               tone={totals.profit >= 0 ? "success" : "destructive"}
@@ -334,6 +355,16 @@ function Row({
       </dd>
     </div>
   );
+}
+
+function isSelectableAccountingDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && value <= localDateKey();
+}
+
+function getStoredAccountingDate(): string {
+  if (typeof window === "undefined") return localDateKey();
+  const stored = window.localStorage.getItem(LAST_CASH_ACCOUNTING_DATE_KEY);
+  return stored && isSelectableAccountingDate(stored) ? stored : localDateKey();
 }
 
 function parseLocalDate(value: string): Date {

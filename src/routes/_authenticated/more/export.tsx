@@ -79,7 +79,7 @@ function ExportPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("cash_movements")
-        .select("id,accounting_date,kind,amount,concept,created_at")
+        .select("id,accounting_date,kind,amount,concept,method,created_at")
         .eq("business_id", business!.id)
         .gte("accounting_date", from)
         .lte("accounting_date", to)
@@ -139,6 +139,7 @@ function ExportPage() {
         "monto_clp",
         "propina_clp",
         "total_contable_clp",
+        "impacto_efectivo_clp",
         "barbero",
         "comision_pct",
         "comision_clp",
@@ -162,6 +163,7 @@ function ExportPage() {
           String(p.amount),
           String(tip),
           String(collected ? p.amount + tip : 0),
+          String(collected && p.method === "efectivo" ? p.amount + tip : 0),
           p.staff_id ? (staffMap[p.staff_id] ?? "") : "",
           p.commission_pct != null ? String(p.commission_pct) : "",
           p.commission_amount != null ? String(p.commission_amount) : "",
@@ -175,16 +177,18 @@ function ExportPage() {
       ...movements.map((movement) => {
         const d = new Date(movement.created_at);
         const signedAmount = movement.kind === "egreso" ? -movement.amount : movement.amount;
+        const cashImpact = movement.method === "efectivo" ? signedAmount : 0;
         return [
           movement.accounting_date,
           d.toTimeString().slice(0, 5),
           `${movement.kind}_manual`,
           "Movimiento manual",
-          "",
+          methodLabel(movement.method),
           "registrado",
           String(movement.amount),
           "0",
           String(signedAmount),
+          String(cashImpact),
           "",
           "",
           "",
@@ -204,6 +208,7 @@ function ExportPage() {
           "Informe diario",
           "",
           "guardado",
+          "",
           "",
           "",
           "",
@@ -295,12 +300,14 @@ function ExportPage() {
 </table>
 <h2>Movimientos manuales</h2>
 <table>
-  <tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th class="right">Monto</th></tr>
+  <tr><th>Fecha</th><th>Tipo</th><th>Método</th><th>Concepto</th><th class="right">Monto</th><th class="right">Impacto efectivo</th></tr>
   ${movements
     .map((movement) => {
       const d = new Date(movement.created_at);
       const sign = movement.kind === "egreso" ? "−" : "+";
-      return `<tr><td>${formatAccountingDate(movement.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${movement.kind}</td><td>${movement.concept}</td><td class="right">${sign} ${clp(movement.amount)}</td></tr>`;
+      const signedAmount = movement.kind === "egreso" ? -movement.amount : movement.amount;
+      const cashImpact = movement.method === "efectivo" ? signedAmount : 0;
+      return `<tr><td>${formatAccountingDate(movement.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${movement.kind}</td><td>${methodLabel(movement.method)}</td><td>${movement.concept}</td><td class="right">${sign} ${clp(movement.amount)}</td><td class="right">${cashImpact > 0 ? "+" : ""}${clp(cashImpact)}</td></tr>`;
     })
     .join("")}
 </table>

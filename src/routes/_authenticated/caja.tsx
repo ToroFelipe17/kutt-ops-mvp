@@ -37,15 +37,16 @@ import {
 } from "@/lib/finance";
 import { toast } from "sonner";
 
+const LAST_CASH_ACCOUNTING_DATE_KEY = "kutt-last-cash-accounting-date";
+
 export const Route = createFileRoute("/_authenticated/caja")({
   validateSearch: (search: Record<string, unknown>): { date?: string } => {
-    const today = localDateKey();
     const requestedDate =
-      typeof search.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
+      typeof search.date === "string" && isSelectableAccountingDate(search.date)
         ? search.date
         : undefined;
 
-    return requestedDate && requestedDate <= today ? { date: requestedDate } : {};
+    return requestedDate ? { date: requestedDate } : {};
   },
   component: CajaPage,
 });
@@ -72,19 +73,21 @@ function CajaPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { date: dateFromSearch } = Route.useSearch();
-  const [accountingDate, setAccountingDate] = useState(() => dateFromSearch ?? localDateKey());
+  const [accountingDate, setAccountingDate] = useState(
+    () => dateFromSearch ?? getStoredAccountingDate(),
+  );
   // TODO(Phase 2): Add week aggregation once all cash queries share a tested range model.
   const selectedDate = useMemo(() => parseLocalDateKey(accountingDate), [accountingDate]);
   const [from, to] = dayRange(selectedDate);
   const isToday = accountingDate === localDateKey();
 
   const updateAccountingDate = (nextDate: string) => {
-    const today = localDateKey();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate) || nextDate > today) return;
+    if (!isSelectableAccountingDate(nextDate)) return;
     setAccountingDate(nextDate);
+    rememberAccountingDate(nextDate);
     navigate({
       to: "/caja",
-      search: nextDate === today ? {} : { date: nextDate },
+      search: nextDate === localDateKey() ? {} : { date: nextDate },
       replace: true,
     });
   };
@@ -128,7 +131,7 @@ function CajaPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cash_movements")
-        .select("id,accounting_date,kind,amount,concept,created_at")
+        .select("id,accounting_date,kind,amount,concept,method,created_at")
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate)
         .order("created_at", { ascending: false });
@@ -247,7 +250,9 @@ function CajaPage() {
   );
 
   useEffect(() => {
-    setAccountingDate(dateFromSearch ?? localDateKey());
+    const nextDate = dateFromSearch ?? getStoredAccountingDate();
+    setAccountingDate(nextDate);
+    rememberAccountingDate(nextDate);
   }, [dateFromSearch]);
 
   const agendaProgress =
@@ -868,7 +873,7 @@ function MovementItem({ m, onDelete }: { m: CashMovementRow; onDelete: () => voi
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{m.concept}</p>
           <p className="text-[11px] text-muted-foreground">
-            {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso manual"}
+            {shortTime(m.created_at)} · {isOut ? "Egreso" : "Ingreso"} · {methodLabel(m.method)}
           </p>
         </div>
         <div className="text-right">
@@ -979,6 +984,7 @@ function NewMovementSheet({
       kind,
       amount: n,
       concept: concept.trim(),
+      method,
       accounting_date: accountingDate,
     });
     setSaving(false);
@@ -1317,16 +1323,40 @@ function NewMovementSheet({
               </div>
             )
           ) : (
-            <div className="mt-4">
-              <p className="text-xs text-muted-foreground px-1">
-                {kind === "ingreso" ? "Motivo del ingreso" : "Motivo del egreso"}
-              </p>
-              <input
-                placeholder={kind === "ingreso" ? "Ej: venta de productos" : "Ej: arriendo"}
-                value={concept}
-                onChange={(e) => setConcept(e.target.value)}
-                className="mt-2 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
-              />
+            <div className="mt-4 space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground px-1">Método</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {PAYMENT_METHODS.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={() => setMethod(item.value)}
+                        className={`h-10 rounded-xl hairline flex items-center justify-center gap-2 text-xs font-medium ${
+                          method === item.value ? "bg-foreground text-background" : "bg-background"
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs text-muted-foreground px-1">
+                  {kind === "ingreso" ? "Motivo del ingreso" : "Motivo del egreso"}
+                </p>
+                <input
+                  placeholder={kind === "ingreso" ? "Ej: venta de productos" : "Ej: arriendo"}
+                  value={concept}
+                  onChange={(e) => setConcept(e.target.value)}
+                  className="mt-2 w-full h-12 px-4 rounded-xl bg-background hairline text-sm outline-none focus:border-border-strong"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -1351,6 +1381,21 @@ const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string; icon: typeof
   { value: "debito", label: methodLabel("debito"), icon: CreditCard },
   { value: "credito", label: methodLabel("credito"), icon: CreditCard },
 ];
+
+function isSelectableAccountingDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && value <= localDateKey();
+}
+
+function getStoredAccountingDate(): string {
+  if (typeof window === "undefined") return localDateKey();
+  const stored = window.localStorage.getItem(LAST_CASH_ACCOUNTING_DATE_KEY);
+  return stored && isSelectableAccountingDate(stored) ? stored : localDateKey();
+}
+
+function rememberAccountingDate(value: string) {
+  if (typeof window === "undefined" || !isSelectableAccountingDate(value)) return;
+  window.localStorage.setItem(LAST_CASH_ACCOUNTING_DATE_KEY, value);
+}
 
 function parseLocalDateKey(value: string): Date {
   const [year, month, day] = value.split("-").map(Number);
