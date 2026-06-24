@@ -60,7 +60,7 @@ function CashAgendaDetailPage() {
       const { data, error } = await supabase
         .from("payments")
         .select(
-          "id,accounting_date,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+          "id,accounting_date,annulled_at,annulment_reason,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
         )
         .eq("business_id", business!.id)
         .eq("accounting_date", date)

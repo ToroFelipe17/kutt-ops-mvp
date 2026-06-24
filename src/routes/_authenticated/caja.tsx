@@ -28,12 +28,12 @@ import {
   dayRange,
   encodePaymentNotes,
   isCollectedPayment,
+  isAnnulledPayment,
   methodLabel,
   getPaymentTipAmount,
   type CashMovementRow,
   type PaymentMethod,
   type PaymentRow,
-  type PaymentStatus,
 } from "@/lib/finance";
 import { toast } from "sonner";
 
@@ -99,7 +99,7 @@ function CajaPage() {
       const { data, error } = await supabase
         .from("payments")
         .select(
-          "id,accounting_date,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+          "id,accounting_date,annulled_at,annulment_reason,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
         )
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate)
@@ -294,13 +294,35 @@ function CajaPage() {
     : chronologicalPayments.slice(0, 10);
   const visibleMovements = showAllMovements ? movements : movements.slice(0, 10);
 
-  const setStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: PaymentStatus }) => {
-      const { error } = await supabase.from("payments").update({ status }).eq("id", id);
+  const annulPayment = useMutation({
+    mutationFn: async (payment: PaymentRow) => {
+      const { error } = await supabase
+        .from("payments")
+        .update({
+          annulled_at: new Date().toISOString(),
+          annulment_reason: "Anulado desde Caja",
+        })
+        .eq("id", payment.id)
+        .is("annulled_at", null);
       if (error) throw error;
+
+      if (payment.appointment_id) {
+        const { error: appointmentError } = await supabase
+          .from("appointments")
+          .update({ status: "confirmado" })
+          .eq("id", payment.appointment_id)
+          .neq("status", "cancelado");
+        if (appointmentError) throw appointmentError;
+      }
     },
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, accountingDate] }),
+    onSuccess: () => {
+      toast.success("Cobro anulado");
+      qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, accountingDate] });
+      qc.invalidateQueries({ queryKey: ["close-payments", business?.id, accountingDate] });
+      qc.invalidateQueries({ queryKey: ["cash-agenda-payments", business?.id, accountingDate] });
+      qc.invalidateQueries({ queryKey: ["exp-pay", business?.id] });
+      qc.invalidateQueries({ queryKey: ["today-payments", business?.id] });
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
@@ -571,12 +593,16 @@ function CajaPage() {
                 (p.appointment_id ? appointmentTimeById[p.appointment_id] : null) ?? p.created_at
               }
               staffName={p.staff_id ? staffById[p.staff_id]?.name : null}
-              onToggle={() =>
-                setStatus.mutate({
-                  id: p.id,
-                  status: isCollectedPayment(p) ? "pendiente" : "conciliado",
-                })
-              }
+              onAnnul={() => {
+                if (
+                  !window.confirm(
+                    "¿Seguro que quieres anular este cobro? El pago dejará de contar en Caja, pero quedará registrado.",
+                  )
+                ) {
+                  return;
+                }
+                annulPayment.mutate(p);
+              }}
             />
           ))}
         </MovementGroup>
@@ -779,30 +805,34 @@ function PaymentItem({
   p,
   occurredAt,
   staffName,
-  onToggle,
+  onAnnul,
 }: {
   p: PaymentRow;
   occurredAt: string;
   staffName: string | null | undefined;
-  onToggle: () => void;
+  onAnnul: () => void;
 }) {
   const Icon =
     p.method === "efectivo" ? Banknote : p.method === "transferencia" ? Send : CreditCard;
   const tip = getPaymentTipAmount(p);
+  const annulled = isAnnulledPayment(p);
   const collected = isCollectedPayment(p);
   return (
-    <li className="rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3">
+    <li className={`rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3 ${annulled ? "opacity-70" : ""}`}>
       <div className="h-9 w-9 rounded-full bg-muted grid place-items-center shrink-0">
         <Icon className="w-4 h-4 text-foreground" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium">{methodLabel(p.method)}</p>
-          {p.commission_amount ? (
+          {!annulled && p.commission_amount ? (
             <span className="text-[10px] text-muted-foreground">
               −{clp(p.commission_amount)} com.
             </span>
           ) : null}
+          {annulled && (
+            <span className="text-[10px] text-muted-foreground">Cobro anulado</span>
+          )}
         </div>
         <p className="text-[11px] text-muted-foreground">
           {shortTime(occurredAt)}
@@ -811,21 +841,29 @@ function PaymentItem({
       </div>
       <div className="text-right">
         <p className="text-sm font-semibold tabular">{clp(p.amount)}</p>
-        {tip > 0 && (
+        {tip > 0 && !annulled && (
           <p
             className={`text-[10px] tabular ${collected ? "text-success" : "text-muted-foreground"}`}
           >
             {collected ? `+ ${clp(tip)} propina` : `${clp(tip)} propina pendiente`}
           </p>
         )}
-        <button
-          onClick={onToggle}
-          className={`mt-0.5 text-[10px] font-medium px-2 py-0.5 rounded-full ${
-            collected ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
-          }`}
-        >
-          {p.status === "parcial" ? "Pago parcial" : collected ? "✓ Cobrado" : "Pendiente"}
-        </button>
+        {annulled ? (
+          <span className="mt-0.5 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            Anulado
+          </span>
+        ) : collected ? (
+          <button
+            onClick={onAnnul}
+            className="mt-0.5 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive"
+          >
+            Anular cobro
+          </button>
+        ) : (
+          <span className="mt-0.5 inline-flex rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
+            Pendiente
+          </span>
+        )}
       </div>
     </li>
   );
@@ -1068,6 +1106,7 @@ function NewMovementSheet({
         .from("payments")
         .select("id")
         .eq("appointment_id", appointment.id)
+        .is("annulled_at", null)
         .limit(1)
         .maybeSingle();
       if (existingPaymentError) throw existingPaymentError;

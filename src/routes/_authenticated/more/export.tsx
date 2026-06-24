@@ -11,6 +11,7 @@ import {
   filterCashActivePayments,
   getPaymentDisplayNotes,
   getPaymentTipAmount,
+  isAnnulledPayment,
   isCollectedPayment,
   isPaymentLinkedToCancelledAppointment,
   methodLabel,
@@ -55,7 +56,7 @@ function ExportPage() {
       const { data } = await supabase
         .from("payments")
         .select(
-          "id,accounting_date,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+          "id,accounting_date,annulled_at,annulment_reason,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
         )
         .eq("business_id", business!.id)
         .gte("accounting_date", from)
@@ -126,8 +127,9 @@ function ExportPage() {
   });
 
   const activePayments = filterCashActivePayments(payments, appointments);
+  const annulledPayments = payments.filter(isAnnulledPayment);
   const cancelledAppointmentPayments = payments.filter((payment) =>
-    isPaymentLinkedToCancelledAppointment(payment, appointments),
+    !isAnnulledPayment(payment) && isPaymentLinkedToCancelledAppointment(payment, appointments),
   );
   const collectedPayments = activePayments.filter(isCollectedPayment);
   const sales = collectedPayments.reduce((s, p) => s + p.amount, 0);
@@ -172,6 +174,8 @@ function ExportPage() {
         "efectivo_contado_clp",
         "diferencia_caja_clp",
         "resultado_ajustado_clp",
+        "anulado_en",
+        "motivo_anulacion",
       ],
       ...activePayments.map((p) => {
         const d = new Date(p.created_at);
@@ -192,6 +196,8 @@ function ExportPage() {
           p.commission_pct != null ? String(p.commission_pct) : "",
           p.commission_amount != null ? String(p.commission_amount) : "",
           getPaymentDisplayNotes(p.notes).replace(/[\n,;]/g, " "),
+          "",
+          "",
           "",
           "",
           "",
@@ -221,6 +227,8 @@ function ExportPage() {
           "",
           "",
           "",
+          "",
+          "",
         ];
       }),
       ...cancelledAppointmentPayments.map((p) => {
@@ -245,6 +253,34 @@ function ExportPage() {
           "",
           "",
           "",
+          "",
+          "",
+        ];
+      }),
+      ...annulledPayments.map((p) => {
+        const d = new Date(p.created_at);
+        const tip = getPaymentTipAmount(p);
+        return [
+          p.accounting_date,
+          d.toTimeString().slice(0, 5),
+          "pago_servicio_anulado",
+          "Cobro anulado",
+          methodLabel(p.method),
+          "anulado",
+          String(p.amount),
+          String(tip),
+          "0",
+          "0",
+          p.staff_id ? (staffMap[p.staff_id] ?? "") : "",
+          p.commission_pct != null ? String(p.commission_pct) : "",
+          p.commission_amount != null ? String(p.commission_amount) : "",
+          getPaymentDisplayNotes(p.notes).replace(/[\n,;]/g, " "),
+          "",
+          "",
+          "",
+          "",
+          p.annulled_at ?? "",
+          p.annulment_reason ?? "",
         ];
       }),
       ...dailyCloses.map((report) => {
@@ -268,6 +304,8 @@ function ExportPage() {
           report.cash_counted == null ? "" : String(report.cash_counted),
           report.cash_counted == null ? "" : String(report.cash_diff),
           report.cash_counted == null ? "" : String(report.profit_estimated + report.cash_diff),
+          "",
+          "",
         ];
       }),
     ];
@@ -337,13 +375,18 @@ function ExportPage() {
 <h2>Detalle</h2>
 <table>
   <tr><th>Fecha</th><th>Método</th><th>Barbero</th><th>Estado</th><th class="right">Venta</th><th class="right">Propina</th><th class="right">Recibido</th></tr>
-  ${[...activePayments, ...cancelledAppointmentPayments]
+  ${[...activePayments, ...cancelledAppointmentPayments, ...annulledPayments]
     .map((p) => {
       const d = new Date(p.created_at);
       const tip = getPaymentTipAmount(p);
       const linkedToCancelled = isPaymentLinkedToCancelledAppointment(p, appointments);
-      const total = !linkedToCancelled && isCollectedPayment(p) ? p.amount + tip : 0;
-      const status = linkedToCancelled ? "No contabilizado · cita cancelada" : p.status;
+      const annulled = isAnnulledPayment(p);
+      const total = !linkedToCancelled && !annulled && isCollectedPayment(p) ? p.amount + tip : 0;
+      const status = annulled
+        ? "Anulado"
+        : linkedToCancelled
+          ? "No contabilizado · cita cancelada"
+          : p.status;
       return `<tr><td>${formatAccountingDate(p.accounting_date)} ${d.toTimeString().slice(0, 5)}</td><td>${methodLabel(p.method)}</td><td>${p.staff_id ? (staffMap[p.staff_id] ?? "") : ""}</td><td>${status}</td><td class="right">${clp(p.amount)}</td><td class="right">${clp(tip)}</td><td class="right">${clp(total)}</td></tr>`;
     })
     .join("")}

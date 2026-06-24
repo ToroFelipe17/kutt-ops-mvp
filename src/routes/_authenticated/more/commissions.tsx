@@ -23,6 +23,7 @@ interface PayRow {
   commission_amount: number | null;
   amount: number;
   status: string;
+  annulled_at: string | null;
 }
 
 function CommissionsPage() {
@@ -49,7 +50,7 @@ function CommissionsPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from("payments")
-        .select("staff_id,commission_amount,amount,status")
+        .select("staff_id,commission_amount,amount,status,annulled_at")
         .eq("business_id", business!.id)
         .gte("accounting_date", from)
         .lte("accounting_date", to);
@@ -61,6 +62,7 @@ function CommissionsPage() {
     const m = new Map<string, { sales: number; commission: number; count: number }>();
     for (const p of payments) {
       if (!p.staff_id) continue;
+      if (p.annulled_at != null || p.status === "pendiente") continue;
       const cur = m.get(p.staff_id) ?? { sales: 0, commission: 0, count: 0 };
       cur.sales += p.amount;
       cur.commission += p.commission_amount ?? 0;

@@ -77,13 +77,13 @@ function Today() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payments")
-        .select("amount,method,notes,appointment_id,status")
+        .select("amount,method,notes,appointment_id,status,annulled_at,annulment_reason")
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate);
       if (error) throw error;
       return (data ?? []) as Pick<
         PaymentRow,
-        "amount" | "method" | "notes" | "appointment_id" | "status"
+        "amount" | "method" | "notes" | "appointment_id" | "status" | "annulled_at" | "annulment_reason"
       >[];
     },
   });
@@ -150,6 +150,7 @@ function Today() {
           .select("id,status")
           .eq("appointment_id", id)
           .neq("status", "pendiente")
+          .is("annulled_at", null)
           .limit(1)
           .maybeSingle();
         if (paymentError) throw paymentError;
@@ -180,6 +181,7 @@ function Today() {
         .from("payments")
         .select("id")
         .eq("appointment_id", appointment.id)
+        .is("annulled_at", null)
         .limit(1)
         .maybeSingle();
       if (existingError) throw existingError;

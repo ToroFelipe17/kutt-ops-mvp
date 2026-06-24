@@ -45,7 +45,7 @@ function ClosePage() {
       const { data } = await supabase
         .from("payments")
         .select(
-          "id,accounting_date,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+          "id,accounting_date,annulled_at,annulment_reason,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
         )
         .eq("business_id", business!.id)
         .eq("accounting_date", accountingDate);
@@ -210,6 +210,9 @@ function ClosePage() {
             )}
             {totals.commissions > 0 && (
               <Row label="Comisiones" value={`− ${clp(totals.commissions)}`} />
+            )}
+            {totals.annulledCount > 0 && (
+              <Row label="Cobros anulados" value={String(totals.annulledCount)} />
             )}
             <Row label="Efectivo esperado" value={clp(totals.cashOnHand)} bold />
             {totals.ivaEstimated > 0 && <Row label="IVA estimado" value={clp(totals.ivaEstimated)} />}

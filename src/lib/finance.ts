@@ -6,6 +6,8 @@ export type PaymentStatus = "pendiente" | "conciliado" | "parcial";
 export interface PaymentRow {
   id: string;
   accounting_date: string;
+  annulled_at: string | null;
+  annulment_reason: string | null;
   amount: number;
   method: PaymentMethod;
   status: PaymentStatus;
@@ -55,6 +57,7 @@ export interface DayTotals {
   profit: number; // sales + manual income - commissions - expenses
   ivaEstimated: number; // ~19% sobre ventas (CL)
   count: number;
+  annulledCount: number;
 }
 
 const TIP_NOTE_PATTERN = /^KUTT_TIP_AMOUNT:(\d+)$/m;
@@ -78,9 +81,14 @@ export function filterCashActivePayments(
   const statuses = appointmentStatusById(appointments);
 
   return payments.filter((payment) => {
+    if (isAnnulledPayment(payment)) return false;
     if (!payment.appointment_id) return true;
     return statuses.get(payment.appointment_id) !== "cancelado";
   });
+}
+
+export function isAnnulledPayment(payment: Pick<PaymentRow, "annulled_at">): boolean {
+  return payment.annulled_at != null;
 }
 
 export function getPaymentTipAmount(payment: Pick<PaymentRow, "notes">): number {
@@ -105,8 +113,8 @@ export function encodePaymentNotes(notes: string, tipAmount: number): string | n
   return value.length > 0 ? value : null;
 }
 
-export function isCollectedPayment(payment: Pick<PaymentRow, "status">): boolean {
-  return payment.status !== "pendiente";
+export function isCollectedPayment(payment: Pick<PaymentRow, "status" | "annulled_at">): boolean {
+  return !isAnnulledPayment(payment) && payment.status !== "pendiente";
 }
 
 export function computeDayTotals(
@@ -117,6 +125,7 @@ export function computeDayTotals(
   const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
   const activePayments = filterCashActivePayments(payments, appointments);
   const collectedPayments = activePayments.filter(isCollectedPayment);
+  const annulledCount = payments.filter(isAnnulledPayment).length;
   const cashPayments = collectedPayments.filter((p) => p.method === "efectivo");
   const cash = sum(cashPayments.map((p) => p.amount));
   const transfer = sum(
@@ -176,6 +185,7 @@ export function computeDayTotals(
     profit,
     ivaEstimated,
     count: collectedPayments.length,
+    annulledCount,
   };
 }
 
