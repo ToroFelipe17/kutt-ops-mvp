@@ -39,6 +39,7 @@ import {
 import { toast } from "sonner";
 
 const LAST_CASH_ACCOUNTING_DATE_KEY = "kutt-last-cash-accounting-date";
+const ACTIVITY_SECTION_PAGE_SIZE = 5;
 
 export const Route = createFileRoute("/_authenticated/caja")({
   validateSearch: (search: Record<string, unknown>): { date?: string } => {
@@ -67,6 +68,14 @@ interface ClientRow {
   id: string;
   name: string;
   phone: string | null;
+}
+interface CashAppointment {
+  id: string;
+  starts_at: string;
+  price: number;
+  status: string;
+  client_name_snapshot: string | null;
+  staff_id: string | null;
 }
 
 function CajaPage() {
@@ -121,7 +130,7 @@ function CajaPage() {
         .gte("starts_at", from)
         .lte("starts_at", to);
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as CashAppointment[];
     },
   });
   const agendaAppointmentIds = useMemo(
@@ -141,6 +150,47 @@ function CajaPage() {
         .in("appointment_id", agendaAppointmentIds);
       if (error) throw error;
       return (data ?? []) as PaymentRow[];
+    },
+  });
+  const { data: annulledAuditPayments = [] } = useQuery({
+    queryKey: ["caja-annulled-payments", business?.id, accountingDate],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payments")
+        .select(
+          "id,accounting_date,annulled_at,annulment_reason,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+        )
+        .eq("business_id", business!.id)
+        .gte("annulled_at", from)
+        .lte("annulled_at", to)
+        .order("annulled_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as PaymentRow[];
+    },
+  });
+  const paymentAppointmentIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...payments, ...annulledAuditPayments]
+            .map((payment) => payment.appointment_id)
+            .filter((appointmentId): appointmentId is string => Boolean(appointmentId)),
+        ),
+      ),
+    [annulledAuditPayments, payments],
+  );
+  const { data: paymentAppointments = [] } = useQuery({
+    queryKey: ["caja-payment-appointments", business?.id, accountingDate, paymentAppointmentIds],
+    enabled: !!business?.id && paymentAppointmentIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("id,starts_at,price,status,client_name_snapshot,staff_id")
+        .eq("business_id", business!.id)
+        .in("id", paymentAppointmentIds);
+      if (error) throw error;
+      return (data ?? []) as CashAppointment[];
     },
   });
 
@@ -232,6 +282,12 @@ function CajaPage() {
         () => {
           qc.invalidateQueries({ queryKey: ["caja-payments", business.id, accountingDate] });
           qc.invalidateQueries({
+            queryKey: ["caja-annulled-payments", business.id, accountingDate],
+          });
+          qc.invalidateQueries({
+            queryKey: ["caja-payment-appointments", business.id, accountingDate],
+          });
+          qc.invalidateQueries({
             queryKey: ["caja-agenda-linked-payments", business.id, accountingDate],
           });
         },
@@ -281,13 +337,13 @@ function CajaPage() {
   }, [dateFromSearch]);
 
   const staffById = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s])), [staff]);
-  const appointmentTimeById = useMemo(
-    () =>
-      Object.fromEntries(
-        appointments.map((appointment) => [appointment.id, appointment.starts_at]),
-      ),
-    [appointments],
-  );
+  const appointmentById = useMemo(() => {
+    const result = new Map<string, CashAppointment>();
+    [...appointments, ...paymentAppointments].forEach((appointment) => {
+      result.set(appointment.id, appointment);
+    });
+    return result;
+  }, [appointments, paymentAppointments]);
   const agendaCollection = useMemo(() => {
     const activeAppointments = appointments.filter(
       (appointment) => appointment.status !== "cancelado",
@@ -328,29 +384,74 @@ function CajaPage() {
   const chronologicalPayments = useMemo(
     () =>
       [...payments].sort((a, b) => {
-        const aTime = a.appointment_id ? appointmentTimeById[a.appointment_id] : null;
-        const bTime = b.appointment_id ? appointmentTimeById[b.appointment_id] : null;
+        const aTime = a.appointment_id ? appointmentById.get(a.appointment_id)?.starts_at : null;
+        const bTime = b.appointment_id ? appointmentById.get(b.appointment_id)?.starts_at : null;
         return (
           new Date(bTime ?? b.created_at).getTime() - new Date(aTime ?? a.created_at).getTime()
         );
       }),
-    [appointmentTimeById, payments],
+    [appointmentById, payments],
   );
+  const activeCollectedPayments = useMemo(
+    () => chronologicalPayments.filter((payment) => isCollectedPayment(payment)),
+    [chronologicalPayments],
+  );
+  const sameDayPayments = useMemo(
+    () =>
+      activeCollectedPayments.filter((payment) => {
+        if (!payment.appointment_id) return true;
+        const appointment = appointmentById.get(payment.appointment_id);
+        if (!appointment) return true;
+        return localDateKey(new Date(appointment.starts_at)) === accountingDate;
+      }),
+    [accountingDate, activeCollectedPayments, appointmentById],
+  );
+  const latePayments = useMemo(
+    () =>
+      activeCollectedPayments.filter((payment) => {
+        if (!payment.appointment_id) return false;
+        const appointment = appointmentById.get(payment.appointment_id);
+        return appointment
+          ? localDateKey(new Date(appointment.starts_at)) !== accountingDate
+          : false;
+      }),
+    [accountingDate, activeCollectedPayments, appointmentById],
+  );
+  const annulledPayments = useMemo(() => {
+    const byId = new Map<string, PaymentRow>();
+    [...payments, ...annulledAuditPayments].forEach((payment) => {
+      if (isAnnulledPayment(payment)) byId.set(payment.id, payment);
+    });
+    return [...byId.values()].sort((a, b) => {
+      const aTime = a.annulled_at ?? a.created_at;
+      const bTime = b.annulled_at ?? b.created_at;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+  }, [annulledAuditPayments, payments]);
 
   const [movOpen, setMovOpen] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
-  const [showAllPayments, setShowAllPayments] = useState(false);
-  const [showAllMovements, setShowAllMovements] = useState(false);
+  const [sameDayVisibleCount, setSameDayVisibleCount] = useState(ACTIVITY_SECTION_PAGE_SIZE);
+  const [lateVisibleCount, setLateVisibleCount] = useState(ACTIVITY_SECTION_PAGE_SIZE);
+  const [movementVisibleCount, setMovementVisibleCount] = useState(ACTIVITY_SECTION_PAGE_SIZE);
+  const [annulledVisibleCount, setAnnulledVisibleCount] = useState(ACTIVITY_SECTION_PAGE_SIZE);
 
   useEffect(() => {
-    setShowAllPayments(false);
-    setShowAllMovements(false);
+    setSameDayVisibleCount(ACTIVITY_SECTION_PAGE_SIZE);
+    setLateVisibleCount(ACTIVITY_SECTION_PAGE_SIZE);
+    setMovementVisibleCount(ACTIVITY_SECTION_PAGE_SIZE);
+    setAnnulledVisibleCount(ACTIVITY_SECTION_PAGE_SIZE);
   }, [accountingDate]);
 
-  const visiblePayments = showAllPayments
-    ? chronologicalPayments
-    : chronologicalPayments.slice(0, 10);
-  const visibleMovements = showAllMovements ? movements : movements.slice(0, 10);
+  const visibleSameDayPayments = sameDayPayments.slice(0, sameDayVisibleCount);
+  const visibleLatePayments = latePayments.slice(0, lateVisibleCount);
+  const visibleMovements = movements.slice(0, movementVisibleCount);
+  const visibleAnnulledPayments = annulledPayments.slice(0, annulledVisibleCount);
+  const hasCashActivity =
+    sameDayPayments.length > 0 ||
+    latePayments.length > 0 ||
+    movements.length > 0 ||
+    annulledPayments.length > 0;
 
   const annulPayment = useMutation({
     mutationFn: async (payment: PaymentRow) => {
@@ -644,50 +745,157 @@ function CajaPage() {
       </section>
 
       <div className="mt-6 space-y-5 px-5">
-        <MovementGroup
-          title="Cobros"
-          count={payments.length}
-          emptyLabel="No hay cobros registrados para esta fecha."
-          expanded={showAllPayments}
-          onToggle={() => setShowAllPayments((value) => !value)}
-        >
-          {visiblePayments.map((p) => (
-            <PaymentItem
-              key={p.id}
-              p={p}
-              occurredAt={
-                (p.appointment_id ? appointmentTimeById[p.appointment_id] : null) ?? p.created_at
-              }
-              staffName={p.staff_id ? staffById[p.staff_id]?.name : null}
-              onAnnul={() => {
-                if (
-                  !window.confirm(
-                    "¿Seguro que quieres anular este cobro? El pago dejará de contar en Caja, pero quedará registrado.",
+        {hasCashActivity ? (
+          <>
+            {sameDayPayments.length > 0 && (
+              <ActivitySection
+                title="Cobros del día"
+                count={sameDayPayments.length}
+                visibleCount={sameDayVisibleCount}
+                onShowMore={() =>
+                  setSameDayVisibleCount((count) =>
+                    Math.min(count + ACTIVITY_SECTION_PAGE_SIZE, sameDayPayments.length),
                   )
-                ) {
-                  return;
                 }
-                annulPayment.mutate(p);
-              }}
-            />
-          ))}
-        </MovementGroup>
+                onShowLess={() => setSameDayVisibleCount(ACTIVITY_SECTION_PAGE_SIZE)}
+              >
+                {visibleSameDayPayments.map((payment) => {
+                  const appointment = payment.appointment_id
+                    ? appointmentById.get(payment.appointment_id)
+                    : null;
+                  return (
+                    <PaymentItem
+                      key={payment.id}
+                      p={payment}
+                      occurredAt={appointment?.starts_at ?? payment.created_at}
+                      staffName={payment.staff_id ? staffById[payment.staff_id]?.name : null}
+                      clientName={appointment?.client_name_snapshot}
+                      onAnnul={() => {
+                        if (
+                          !window.confirm(
+                            "¿Seguro que quieres anular este cobro? El pago dejará de contar en Caja, pero quedará registrado.",
+                          )
+                        ) {
+                          return;
+                        }
+                        annulPayment.mutate(payment);
+                      }}
+                    />
+                  );
+                })}
+              </ActivitySection>
+            )}
 
-        <MovementGroup
-          title="Ingresos y egresos"
-          count={movements.length}
-          emptyLabel="No hay movimientos manuales para esta fecha."
-          expanded={showAllMovements}
-          onToggle={() => setShowAllMovements((value) => !value)}
-        >
-          {visibleMovements.map((movement) => (
-            <MovementItem
-              key={movement.id}
-              m={movement}
-              onDelete={() => deleteMovement.mutate(movement.id)}
-            />
-          ))}
-        </MovementGroup>
+            {latePayments.length > 0 && (
+              <ActivitySection
+                title="Cobros fuera de fecha"
+                count={latePayments.length}
+                visibleCount={lateVisibleCount}
+                onShowMore={() =>
+                  setLateVisibleCount((count) =>
+                    Math.min(count + ACTIVITY_SECTION_PAGE_SIZE, latePayments.length),
+                  )
+                }
+                onShowLess={() => setLateVisibleCount(ACTIVITY_SECTION_PAGE_SIZE)}
+              >
+                {visibleLatePayments.map((payment) => {
+                  const appointment = payment.appointment_id
+                    ? appointmentById.get(payment.appointment_id)
+                    : null;
+                  const serviceDate = appointment
+                    ? localDateKey(new Date(appointment.starts_at))
+                    : null;
+                  const contextNote =
+                    serviceDate && serviceDate < accountingDate
+                      ? `Servicio del ${serviceDate}`
+                      : serviceDate
+                        ? `Servicio agendado para ${serviceDate}`
+                        : undefined;
+                  return (
+                    <PaymentItem
+                      key={payment.id}
+                      p={payment}
+                      occurredAt={payment.created_at}
+                      staffName={payment.staff_id ? staffById[payment.staff_id]?.name : null}
+                      clientName={appointment?.client_name_snapshot}
+                      contextNote={contextNote}
+                      onAnnul={() => {
+                        if (
+                          !window.confirm(
+                            "¿Seguro que quieres anular este cobro? El pago dejará de contar en Caja, pero quedará registrado.",
+                          )
+                        ) {
+                          return;
+                        }
+                        annulPayment.mutate(payment);
+                      }}
+                    />
+                  );
+                })}
+              </ActivitySection>
+            )}
+
+            {movements.length > 0 && (
+              <ActivitySection
+                title="Ingresos y egresos"
+                count={movements.length}
+                visibleCount={movementVisibleCount}
+                onShowMore={() =>
+                  setMovementVisibleCount((count) =>
+                    Math.min(count + ACTIVITY_SECTION_PAGE_SIZE, movements.length),
+                  )
+                }
+                onShowLess={() => setMovementVisibleCount(ACTIVITY_SECTION_PAGE_SIZE)}
+              >
+                {visibleMovements.map((movement) => (
+                  <MovementItem
+                    key={movement.id}
+                    m={movement}
+                    onDelete={() => deleteMovement.mutate(movement.id)}
+                  />
+                ))}
+              </ActivitySection>
+            )}
+
+            {annulledPayments.length > 0 && (
+              <ActivitySection
+                title="Cobros anulados"
+                count={annulledPayments.length}
+                visibleCount={annulledVisibleCount}
+                onShowMore={() =>
+                  setAnnulledVisibleCount((count) =>
+                    Math.min(count + ACTIVITY_SECTION_PAGE_SIZE, annulledPayments.length),
+                  )
+                }
+                onShowLess={() => setAnnulledVisibleCount(ACTIVITY_SECTION_PAGE_SIZE)}
+              >
+                {visibleAnnulledPayments.map((payment) => {
+                  const appointment = payment.appointment_id
+                    ? appointmentById.get(payment.appointment_id)
+                    : null;
+                  const annulledNote = payment.annulled_at
+                    ? `Anulado ${formatDateTime(payment.annulled_at)}`
+                    : "Anulado";
+                  return (
+                    <PaymentItem
+                      key={payment.id}
+                      p={payment}
+                      occurredAt={payment.annulled_at ?? payment.created_at}
+                      staffName={payment.staff_id ? staffById[payment.staff_id]?.name : null}
+                      clientName={appointment?.client_name_snapshot}
+                      contextNote={annulledNote}
+                      detailNote={payment.annulment_reason ?? undefined}
+                    />
+                  );
+                })}
+              </ActivitySection>
+            )}
+          </>
+        ) : (
+          <p className="rounded-2xl bg-surface px-4 py-6 text-center text-xs text-muted-foreground hairline">
+            No hay actividad registrada para esta fecha.
+          </p>
+        )}
       </div>
 
       <AnimatePresence>
@@ -741,22 +949,23 @@ function CajaPage() {
   );
 }
 
-function MovementGroup({
+function ActivitySection({
   title,
   count,
-  emptyLabel,
-  expanded,
-  onToggle,
+  visibleCount,
+  onShowMore,
+  onShowLess,
   children,
 }: {
   title: string;
   count: number;
-  emptyLabel: string;
-  expanded: boolean;
-  onToggle: () => void;
+  visibleCount: number;
+  onShowMore: () => void;
+  onShowLess: () => void;
   children: React.ReactNode;
 }) {
-  const hiddenCount = Math.max(0, count - 10);
+  const hiddenCount = Math.max(0, count - visibleCount);
+  const expanded = visibleCount > ACTIVITY_SECTION_PAGE_SIZE;
 
   return (
     <section>
@@ -766,31 +975,28 @@ function MovementGroup({
           {count}
         </span>
       </div>
-      {count === 0 ? (
-        <p className="rounded-2xl bg-surface px-4 py-5 text-center text-xs text-muted-foreground hairline">
-          {emptyLabel}
-        </p>
-      ) : (
-        <>
-          <ul className="space-y-1.5">{children}</ul>
-          {count > 10 && (
+      <ul className="space-y-1.5">{children}</ul>
+      {count > ACTIVITY_SECTION_PAGE_SIZE && (
+        <div className="mt-2 flex justify-center gap-2">
+          {hiddenCount > 0 && (
             <button
               type="button"
-              onClick={onToggle}
-              className="mx-auto mt-2 flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={onShowMore}
+              className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              {expanded ? (
-                <>
-                  Mostrar primeros 10 <ChevronUp className="h-3.5 w-3.5" />
-                </>
-              ) : (
-                <>
-                  Mostrar resto ({hiddenCount}) <ChevronDown className="h-3.5 w-3.5" />
-                </>
-              )}
+              Mostrar 5 más <ChevronDown className="h-3.5 w-3.5" />
             </button>
           )}
-        </>
+          {expanded && (
+            <button
+              type="button"
+              onClick={onShowLess}
+              className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Mostrar menos <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       )}
     </section>
   );
@@ -873,16 +1079,31 @@ function formatCashDifferenceStatus(difference: number): string {
     : `Faltan ${clp(Math.abs(difference))}`;
 }
 
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString("es-CL", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function PaymentItem({
   p,
   occurredAt,
   staffName,
+  clientName,
+  contextNote,
+  detailNote,
   onAnnul,
 }: {
   p: PaymentRow;
   occurredAt: string;
   staffName: string | null | undefined;
-  onAnnul: () => void;
+  clientName?: string | null;
+  contextNote?: string;
+  detailNote?: string;
+  onAnnul?: () => void;
 }) {
   const Icon =
     p.method === "efectivo" ? Banknote : p.method === "transferencia" ? Send : CreditCard;
@@ -898,7 +1119,7 @@ function PaymentItem({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium">{methodLabel(p.method)}</p>
+          <p className="truncate text-sm font-medium">{clientName || methodLabel(p.method)}</p>
           {!annulled && p.commission_amount ? (
             <span className="text-[10px] text-muted-foreground">
               −{clp(p.commission_amount)} com.
@@ -908,8 +1129,13 @@ function PaymentItem({
         </div>
         <p className="text-[11px] text-muted-foreground">
           {shortTime(occurredAt)}
+          {clientName ? ` · ${methodLabel(p.method)}` : ""}
           {staffName ? ` · ${staffName}` : ""}
         </p>
+        {contextNote ? <p className="text-[10px] text-muted-foreground">{contextNote}</p> : null}
+        {detailNote ? (
+          <p className="truncate text-[10px] text-muted-foreground">{detailNote}</p>
+        ) : null}
       </div>
       <div className="text-right">
         <p className="text-sm font-semibold tabular">{clp(p.amount)}</p>
@@ -924,7 +1150,7 @@ function PaymentItem({
           <span className="mt-0.5 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
             Anulado
           </span>
-        ) : collected ? (
+        ) : collected && onAnnul ? (
           <button
             onClick={onAnnul}
             className="mt-0.5 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive"
