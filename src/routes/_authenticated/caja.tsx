@@ -31,6 +31,7 @@ import {
   isAnnulledPayment,
   methodLabel,
   getPaymentTipAmount,
+  filterCashActivePayments,
   type CashMovementRow,
   type PaymentMethod,
   type PaymentRow,
@@ -123,6 +124,25 @@ function CajaPage() {
       return data ?? [];
     },
   });
+  const agendaAppointmentIds = useMemo(
+    () => Array.from(new Set(appointments.map((appointment) => appointment.id))),
+    [appointments],
+  );
+  const { data: agendaLinkedPayments = [] } = useQuery({
+    queryKey: ["caja-agenda-linked-payments", business?.id, accountingDate, agendaAppointmentIds],
+    enabled: !!business?.id && agendaAppointmentIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payments")
+        .select(
+          "id,accounting_date,annulled_at,annulment_reason,amount,method,status,staff_id,commission_amount,commission_pct,appointment_id,notes,created_at",
+        )
+        .eq("business_id", business!.id)
+        .in("appointment_id", agendaAppointmentIds);
+      if (error) throw error;
+      return (data ?? []) as PaymentRow[];
+    },
+  });
 
   const { data: movements = [] } = useQuery({
     queryKey: ["caja-mov", business?.id, accountingDate],
@@ -211,6 +231,9 @@ function CajaPage() {
         },
         () => {
           qc.invalidateQueries({ queryKey: ["caja-payments", business.id, accountingDate] });
+          qc.invalidateQueries({
+            queryKey: ["caja-agenda-linked-payments", business.id, accountingDate],
+          });
         },
       )
       .on(
@@ -235,6 +258,9 @@ function CajaPage() {
         },
         () => {
           qc.invalidateQueries({ queryKey: ["caja-appointments", business.id, accountingDate] });
+          qc.invalidateQueries({
+            queryKey: ["caja-agenda-linked-payments", business.id, accountingDate],
+          });
         },
       )
       .subscribe();
@@ -254,11 +280,6 @@ function CajaPage() {
     rememberAccountingDate(nextDate);
   }, [dateFromSearch]);
 
-  const agendaProgress =
-    totals.agendaExpected > 0
-      ? Math.min(100, Math.round((totals.agendaCollected / totals.agendaExpected) * 100))
-      : 0;
-
   const staffById = useMemo(() => Object.fromEntries(staff.map((s) => [s.id, s])), [staff]);
   const appointmentTimeById = useMemo(
     () =>
@@ -267,6 +288,43 @@ function CajaPage() {
       ),
     [appointments],
   );
+  const agendaCollection = useMemo(() => {
+    const activeAppointments = appointments.filter(
+      (appointment) => appointment.status !== "cancelado",
+    );
+    const activeLinkedPayments = filterCashActivePayments(agendaLinkedPayments, appointments);
+    const activePaymentAppointmentIds = new Set(
+      activeLinkedPayments
+        .map((payment) => payment.appointment_id)
+        .filter((appointmentId): appointmentId is string => Boolean(appointmentId)),
+    );
+    const expected = activeAppointments.reduce(
+      (total, appointment) => total + appointment.price,
+      0,
+    );
+    const pending = activeAppointments.reduce((total, appointment) => {
+      if (activePaymentAppointmentIds.has(appointment.id)) return total;
+      return total + appointment.price;
+    }, 0);
+    const lateCount = activeAppointments.filter((appointment) => {
+      const serviceDate = localDateKey(new Date(appointment.starts_at));
+      return activeLinkedPayments.some(
+        (payment) =>
+          payment.appointment_id === appointment.id && payment.accounting_date !== serviceDate,
+      );
+    }).length;
+
+    return {
+      expected,
+      pending,
+      resolved: Math.max(expected - pending, 0),
+      lateCount,
+    };
+  }, [agendaLinkedPayments, appointments]);
+  const agendaProgress =
+    agendaCollection.expected > 0
+      ? Math.min(100, Math.round((agendaCollection.resolved / agendaCollection.expected) * 100))
+      : 0;
   const chronologicalPayments = useMemo(
     () =>
       [...payments].sort((a, b) => {
@@ -318,6 +376,9 @@ function CajaPage() {
     onSuccess: () => {
       toast.success("Cobro anulado");
       qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, accountingDate] });
+      qc.invalidateQueries({
+        queryKey: ["caja-agenda-linked-payments", business?.id, accountingDate],
+      });
       qc.invalidateQueries({ queryKey: ["close-payments", business?.id, accountingDate] });
       qc.invalidateQueries({ queryKey: ["cash-agenda-payments", business?.id, accountingDate] });
       qc.invalidateQueries({ queryKey: ["exp-pay", business?.id] });
@@ -433,9 +494,9 @@ function CajaPage() {
               <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-success/15 text-success">
                 <ArrowUpRight className="w-3 h-3" /> {totals.count} cobros
               </span>
-              {totals.pending > 0 && (
+              {agendaCollection.pending > 0 && (
                 <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-warning/15 text-warning">
-                  {clp(totals.pending)} por cobrar
+                  {clp(agendaCollection.pending)} por cobrar
                 </span>
               )}
             </div>
@@ -527,8 +588,8 @@ function CajaPage() {
             <div>
               <p className="text-xs text-muted-foreground">Cobros de agenda</p>
               <p className="mt-1 text-sm font-medium">
-                {clp(totals.agendaCollected)}{" "}
-                <span className="text-muted-foreground">de {clp(totals.agendaExpected)}</span>
+                {clp(agendaCollection.resolved)}{" "}
+                <span className="text-muted-foreground">de {clp(agendaCollection.expected)}</span>
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -550,8 +611,13 @@ function CajaPage() {
             />
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Compara servicios agendados no cancelados con pagos cobrados para esas citas.
+            Compara servicios agendados no cancelados con cobros activos para esas citas.
           </p>
+          {agendaCollection.lateCount > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Algunos cobros fueron registrados en otra fecha.
+            </p>
+          )}
         </div>
       </section>
 
@@ -642,6 +708,9 @@ function CajaPage() {
               qc.invalidateQueries({
                 queryKey: ["caja-appointments", business?.id, accountingDate],
               });
+              qc.invalidateQueries({
+                queryKey: ["caja-agenda-linked-payments", business?.id, accountingDate],
+              });
             }}
           />
         )}
@@ -658,6 +727,9 @@ function CajaPage() {
               qc.invalidateQueries({ queryKey: ["caja-payments", business?.id, accountingDate] });
               qc.invalidateQueries({
                 queryKey: ["caja-appointments", business?.id, accountingDate],
+              });
+              qc.invalidateQueries({
+                queryKey: ["caja-agenda-linked-payments", business?.id, accountingDate],
               });
             }}
           />
@@ -818,7 +890,9 @@ function PaymentItem({
   const annulled = isAnnulledPayment(p);
   const collected = isCollectedPayment(p);
   return (
-    <li className={`rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3 ${annulled ? "opacity-70" : ""}`}>
+    <li
+      className={`rounded-xl bg-surface hairline px-3.5 py-3 flex items-center gap-3 ${annulled ? "opacity-70" : ""}`}
+    >
       <div className="h-9 w-9 rounded-full bg-muted grid place-items-center shrink-0">
         <Icon className="w-4 h-4 text-foreground" />
       </div>
@@ -830,9 +904,7 @@ function PaymentItem({
               −{clp(p.commission_amount)} com.
             </span>
           ) : null}
-          {annulled && (
-            <span className="text-[10px] text-muted-foreground">Cobro anulado</span>
-          )}
+          {annulled && <span className="text-[10px] text-muted-foreground">Cobro anulado</span>}
         </div>
         <p className="text-[11px] text-muted-foreground">
           {shortTime(occurredAt)}
